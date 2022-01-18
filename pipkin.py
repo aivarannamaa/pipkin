@@ -2,7 +2,7 @@
 """
 MIT License
 
-Copyright (c) 2021 Aivar Annamaa
+Copyright (c) 2022 Aivar Annamaa
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -67,7 +67,7 @@ SERVER_ENCODING = "utf-8"
 __version__ = "0.2b1"
 
 
-class FileUrlsParser(HTMLParser):
+class SimpleUrlsParser(HTMLParser):
     def error(self, message):
         pass
 
@@ -90,8 +90,7 @@ class FileUrlsParser(HTMLParser):
     def handle_endtag(self, tag):
         pass
 
-
-class Downloader:
+class BaseIndexDownloader:
     def __init__(self, index_url: str):
         self._index_url = index_url.rstrip("/")
         self._file_urls_cache: Dict[str, Dict[str, str]] = {}
@@ -103,20 +102,45 @@ class Downloader:
         return self._file_urls_cache[dist_name]
 
     def _download_file_urls(self, dist_name) -> Dict[str, str]:
+        raise NotImplementedError()
+
+class SimpleIndexDownloader(BaseIndexDownloader):
+    def _download_file_urls(self, dist_name) -> Dict[str, str]:
         url = f"{self._index_url}/{dist_name}"
-        logger.debug("Downloading %s", url)
+        logger.info("Downloading file urls from simple index %s", url)
 
         with urlopen(url) as fp:
-            parser = FileUrlsParser()
+            parser = SimpleUrlsParser()
             parser.feed(fp.read().decode("utf-8"))
             return parser.file_urls
 
-    def download_file(self, dist_name: str, file_name: str) -> typing.BinaryIO:
-        urls = self.get_file_urls(dist_name)
-        assert file_name in urls
-        result = urlopen(urls[file_name])
-        logger.debug("Headers: %r", result.headers.items())
+class JsonIndexDownloader(BaseIndexDownloader):
+    def _download_file_urls(self, dist_name) -> Dict[str, str]:
+        metadata_url = f"{self._index_url}/{dist_name}/json"
+        logger.info("Downloading file urls from json index at %s", metadata_url)
+
+        result = {}
+        with urlopen(metadata_url) as fp:
+            data = json.load(fp)
+            releases = data["releases"]
+            for ver in releases:
+                for file in releases[ver]:
+                    file_url = file["url"]
+                    if "filename" in file:
+                        file_name = file["filename"]
+                    else:
+                        # micropython.org/pi doesn't have it
+                        file_name = file_url.split("/")[-1]
+                        # may be missing micropython prefix
+                        if not file_name.startswith(dist_name):
+                            # Let's hope version part doesn't contain dashes
+                            _, suffix = file_name.split("-")
+                            file_name = dist_name + "-" + suffix
+                    result[file_name] = file_url
+
         return result
+
+
 
 
 class PipkinServer(HTTPServer):
@@ -125,7 +149,8 @@ class PipkinServer(HTTPServer):
         server_address: Tuple[str, int],
         request_handler_class: Callable[..., BaseRequestHandler],
     ):
-        self.downloader = Downloader(PYPI_SIMPLE_INDEX)
+        self.downloader = SimpleIndexDownloader(PYPI_SIMPLE_INDEX)
+        self.downloader = JsonIndexDownloader(MP_ORG_INDEX)
         super().__init__(server_address, request_handler_class)
 
 
@@ -142,7 +167,7 @@ def close_server():
 
 class PipkinProxyHandler(BaseHTTPRequestHandler):
     def __init__(self, request: bytes, client_address: Tuple[str, int], server: BaseServer):
-        print("CREATING NEW HANDLER")
+        logger.debug("Creating new handler")
         assert isinstance(server, PipkinServer)
         self._downloader = server.downloader
         super(PipkinProxyHandler, self).__init__(request, client_address, server)
@@ -159,6 +184,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
     def _serve_distribution_page(self, dist_name: str) -> None:
         logger.debug("Serving index page for %s", dist_name)
         file_urls = self._downloader.get_file_urls(dist_name)
+        logger.debug("File urls: %r", file_urls)
         self.send_response(200)
         self.send_header("Content-type", f"text/html; charset={SERVER_ENCODING}")
         self.end_headers()
@@ -169,18 +195,35 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
             )
         self.wfile.write("</body></html>".encode(SERVER_ENCODING))
 
-    def _serve_file(self, dist_name, file_name):
+    def _serve_file(self, dist_name: str, file_name: str):
         logger.debug("Serving %s for %s", file_name, dist_name)
-        fp = self._downloader.download_file(dist_name, file_name)
+
+        original_bytes = self._download_file(dist_name, file_name)
+        tweaked_bytes = self._tweak_file(original_bytes, file_name)
+
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.end_headers()
-        while True:
-            block = fp.read(4096)
-            if block:
-                self.wfile.write(block)
-            else:
-                break
+
+        block_size = 4096
+        for start_index in range(0, len(tweaked_bytes), block_size):
+            block = tweaked_bytes[start_index:start_index+block_size]
+            self.wfile.write(block)
+
+    def _download_file(self, dist_name: str, file_name: str) -> bytes:
+        urls = self._downloader.get_file_urls(dist_name)
+        # TODO: try all downloaders
+        assert file_name in urls
+        url = urls[file_name]
+        logger.debug("Downloading file from %s", url)
+        result = urlopen(url)
+        logger.debug("Headers: %r", result.headers.items())
+        return result.read()
+
+    def _tweak_file(self, original_bytes: bytes, file_name: str) -> bytes:
+        # TODO:
+        return original_bytes
+
 
 
 class UserError(RuntimeError):
@@ -207,7 +250,7 @@ def install(
 
     temp_dir = tempfile.mkdtemp()
     try:
-        _install_to_local_temp_dir(specs, temp_dir, index_urls)
+        _install_with_pip(specs, temp_dir, index_urls)
         _remove_unneeded_files(temp_dir)
         if port is not None:
             _copy_to_micropython_over_serial(temp_dir, port, target_dir)
@@ -271,14 +314,6 @@ def _get_rshell_command() -> Optional[List[str]]:
     else:
         return None
 
-
-def _install_to_local_temp_dir(
-    specs: List[str], temp_install_dir: str, index_urls: List[str]
-) -> None:
-    pip_specs = _install_all_upip_compatible(specs, temp_install_dir, index_urls)
-
-    if pip_specs:
-        _install_with_pip(pip_specs, temp_install_dir, index_urls)
 
 
 def _install_all_upip_compatible(
@@ -396,7 +431,7 @@ def _install_with_pip(specs: List[str], target_dir: str, index_urls: List[str]):
         # (eg. micropython-os below 0.4.4)
         index_args = []
 
-    port = 8763
+    port = 8763 # TODO:
     _server = PipkinServer(("", port), PipkinProxyHandler)
     threading.Thread(name="pipkin proxy", target=_server.serve_forever).start()
     index_args = ["--index-url", "http://localhost:{port}/".format(port=port)]
