@@ -66,6 +66,24 @@ SERVER_ENCODING = "utf-8"
 
 __version__ = "0.2b1"
 
+"""
+steps:
+    - infer target if no explicit connection parameters are given
+    - connect (MP)
+    - determine target location on the device/mount
+    - sync RTC (MP, install, uninstall). Not required for CP?
+    - ensure temp venv for pip operations
+    - fetch METADATA-s and RECORD-s (may be empty in all cases except "show -f") and populate venv
+    - record current state
+    - invoke pip (translate paths in the output)
+    - determine deleted and changed dists and remove these on the target (according to actual RECORD-s)
+    - determine new and changed dists and copy these to the target
+    - clear venv
+    
+    
+    
+"""
+
 
 class SimpleUrlsParser(HTMLParser):
     def error(self, message):
