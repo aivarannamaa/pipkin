@@ -22,7 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-
+import copy
+import gzip
 import io
 import json
 import os.path
@@ -37,6 +38,7 @@ import threading
 from html.parser import HTMLParser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import BaseRequestHandler, BaseServer
+from textwrap import dedent
 from typing import Union, List, Dict, Any, Optional, Tuple, Callable
 from urllib.error import HTTPError
 from urllib.request import urlopen
@@ -55,6 +57,8 @@ except ImportError:
 
 
 from pkg_resources import Requirement
+
+import email.parser
 
 logger = logging.getLogger(__name__)
 
@@ -82,28 +86,6 @@ steps:
 
 
 
-"""
-
-MP_LIB_SETUP_TEMPLATE = """\
-import sys
-# Remove current dir from sys.path, otherwise setuptools will peek up our
-# module instead of system's.
-#sys.path.pop(0)
-from setuptools import setup
-#sys.path.append("..")
-#import sdist_upip
-setup(name='micropython-%(dist_name)s',
-      version='%(version)s',
-      description=%(desc)r,
-      long_description=%(long_desc)s,
-      url='https://github.com/micropython/micropython-lib',
-      author=%(author)r,
-      author_email=%(author_email)r,
-      maintainer=%(maintainer)r,
-      maintainer_email='micro-python@googlegroups.com',
-      license=%(license)r,
-      cmdclass={'sdist': sdist_upip.sdist},
-      %(_what_)s=[%(modules)s]%(_inst_req_)s)
 """
 
 class SimpleUrlsParser(HTMLParser):
@@ -143,6 +125,7 @@ class BaseIndexDownloader:
     def _download_file_urls(self, dist_name) -> Dict[str, str]:
         raise NotImplementedError()
 
+
 class SimpleIndexDownloader(BaseIndexDownloader):
     def _download_file_urls(self, dist_name) -> Dict[str, str]:
         url = f"{self._index_url}/{dist_name}"
@@ -152,6 +135,7 @@ class SimpleIndexDownloader(BaseIndexDownloader):
             parser = SimpleUrlsParser()
             parser.feed(fp.read().decode("utf-8"))
             return parser.file_urls
+
 
 class JsonIndexDownloader(BaseIndexDownloader):
     def _download_file_urls(self, dist_name) -> Dict[str, str]:
@@ -178,8 +162,6 @@ class JsonIndexDownloader(BaseIndexDownloader):
                     result[file_name] = file_url
 
         return result
-
-
 
 
 class PipkinServer(HTTPServer):
@@ -246,7 +228,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
 
         block_size = 4096
         for start_index in range(0, len(tweaked_bytes), block_size):
-            block = tweaked_bytes[start_index:start_index+block_size]
+            block = tweaked_bytes[start_index : start_index + block_size]
             self.wfile.write(block)
 
     def _download_file(self, dist_name: str, file_name: str) -> bytes:
@@ -266,22 +248,20 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         # In case of upip packages (tar.gz-s without setup.py) reverse following process:
         # https://github.com/micropython/micropython-lib/commit/3a6ab0b
 
-        in_tar = tarfile.open(fileobj=io.BytesIO(original_bytes), mode="r:gz")
-        out_buffer = io.BytesIO()
-        out_tar = tarfile.open(fileobj=out_buffer, mode="w:gz")
+        decompressed_original = gzip.decompress(original_bytes)
+        in_tar = tarfile.open(fileobj=io.BytesIO(decompressed_original), mode="r")
 
-
+        wrapper_dir = None
         py_modules = []
         packages = []
         metadata_bytes = None
+        metadata_tarinfo = None
+        requirements = []
 
         for info in in_tar:
             logger.debug("Processing %r", info)
             with in_tar.extractfile(info) as f:
                 content = f.read()
-
-            # all existing files need to be added without changing
-            out_tar.addfile(info, io.BytesIO(content))
 
             if "/" in info.name:
                 wrapper_dir, rel_name = info.name.split("/", maxsplit=1)
@@ -294,7 +274,6 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
             rel_name = rel_name.strip("/")
             rel_segments = rel_name.split("/")
 
-
             # collect information about the original tar
             if rel_name == "setup.py":
                 logger.debug("The archive contains setup.py. No tweaks needed")
@@ -302,11 +281,14 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
             elif ".egg-info" in rel_name:
                 if rel_name.endswith(".egg-info/PKG-INFO"):
                     metadata_bytes = content
+                    metadata_tarinfo = info
+                elif rel_name.endswith(".egg-info/requires.txt"):
+                    requirements = content.decode("utf-8").strip().splitlines()
             elif len(rel_segments) == 1:
                 # toplevel item outside of egg-info
                 if info.isfile() and rel_name.endswith(".py"):
                     # toplevel module
-                    module_name = rel_name[:-len(".py")]
+                    module_name = rel_name[: -len(".py")]
                     py_modules.append(module_name)
                 else:
                     assert info.isdir()
@@ -320,13 +302,87 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
                     # directories may not have their own entry
                     packages.append(rel_segments[0])
 
+        assert wrapper_dir
+        assert metadata_bytes
+
         logger.debug("%s is optimized for upip. Re-constructing missing files", file_name)
         logger.debug("py_modules: %r", py_modules)
         logger.debug("packages: %r", packages)
-        logger.debug("metadata; %r", metadata_bytes)
+        logger.debug("requirements: %r", requirements)
+        metadata = self._parse_metadata(metadata_bytes)
+        logger.debug("metadata: %r", metadata)
+        setup_py = self._create_setup_py(metadata, py_modules, packages, requirements)
+        logger.debug("setup.py: %s", setup_py)
 
-        return original_bytes
+        setup_py_bytes = setup_py.encode("utf-8")
+        setup_py_stream = io.BytesIO(setup_py_bytes)
+        setup_py_tarinfo = tarfile.TarInfo(name=wrapper_dir + "/setup.py")
 
+        out_buffer = io.BytesIO(decompressed_original)
+        len_before = len(decompressed_original)
+        out_tar = tarfile.open(fileobj=out_buffer, mode="a:")
+        #out_tar.add("setup.py", arcname="mumm.py")
+        out_tar.addfile(setup_py_tarinfo, setup_py_stream)
+        out_tar.close()
+
+        out_buffer.seek(0)
+        out_bytes = out_buffer.getvalue()
+        assert out_bytes != decompressed_original
+        compressed_out_butes = gzip.compress(out_bytes)
+        with open("_temp.tar.gz", "bw") as fp:
+            fp.write(compressed_out_butes)
+        return compressed_out_butes
+
+    def _parse_metadata(self, metadata_bytes) -> Dict[str, str]:
+        metadata = email.parser.Parser().parsestr(metadata_bytes.decode("utf-8"))
+        return {
+            key: metadata.get(key)
+            for key in (
+                "Metadata-Version",
+                "Name",
+                "Version",
+                "Summary",
+                "Home-page",
+                "Author",
+                "Author-email",
+                "License",
+            )
+        }
+
+    def _create_setup_py(self, metadata: Dict[str, str], py_modules: List[str], packages: List[str],
+                         requirements: List[str]) -> str:
+
+        src = dedent(
+            f"""
+            from setuptools import setup
+            setup (
+            """).lstrip()
+
+        for src_key, target_key in [("Name", "name"),
+                                    ("Version", "version"),
+                                    ("Summary", "description"),
+                                    ("Home-page", "url"),
+                                    ("Author", "author"),
+                                    ("Author-email", "author_email"),
+                                    ("License", "license")
+                                    ]:
+            if src_key in metadata:
+                src += f"    {target_key}={metadata[src_key]!r},\n"
+
+        if requirements:
+            src += f"    install_required={requirements!r},\n"
+
+        if py_modules:
+            src += f"    py_modules={py_modules!r},\n"
+
+        if packages:
+            src += f"    packages={packages!r},\n"
+
+        # include all other files as package data
+        src += "    package_data={'*': ['*', '*/*', '*/*/*', '*/*/*/*', '*/*/*/*/*', '*/*/*/*/*/*', '*/*/*/*/*/*/*', '*/*/*/*/*/*/*/*']}\n"
+
+        src += ")\n"
+        return src
 
 
 class UserError(RuntimeError):
@@ -416,7 +472,6 @@ def _get_rshell_command() -> Optional[List[str]]:
         return ["rshell"]
     else:
         return None
-
 
 
 def _install_all_upip_compatible(
@@ -534,7 +589,7 @@ def _install_with_pip(specs: List[str], target_dir: str, index_urls: List[str]):
         # (eg. micropython-os below 0.4.4)
         index_args = []
 
-    port = 8763 # TODO:
+    port = 8763  # TODO:
     _server = PipkinServer(("", port), PipkinProxyHandler)
     threading.Thread(name="pipkin proxy", target=_server.serve_forever).start()
     index_args = ["--index-url", "http://localhost:{port}/".format(port=port)]
