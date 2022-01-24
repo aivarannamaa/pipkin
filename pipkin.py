@@ -79,11 +79,32 @@ steps:
     - determine deleted and changed dists and remove these on the target (according to actual RECORD-s)
     - determine new and changed dists and copy these to the target
     - clear venv
-    
-    
-    
+
+
+
 """
 
+MP_LIB_SETUP_TEMPLATE = """\
+import sys
+# Remove current dir from sys.path, otherwise setuptools will peek up our
+# module instead of system's.
+#sys.path.pop(0)
+from setuptools import setup
+#sys.path.append("..")
+#import sdist_upip
+setup(name='micropython-%(dist_name)s',
+      version='%(version)s',
+      description=%(desc)r,
+      long_description=%(long_desc)s,
+      url='https://github.com/micropython/micropython-lib',
+      author=%(author)r,
+      author_email=%(author_email)r,
+      maintainer=%(maintainer)r,
+      maintainer_email='micro-python@googlegroups.com',
+      license=%(license)r,
+      cmdclass={'sdist': sdist_upip.sdist},
+      %(_what_)s=[%(modules)s]%(_inst_req_)s)
+"""
 
 class SimpleUrlsParser(HTMLParser):
     def error(self, message):
@@ -217,7 +238,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         logger.debug("Serving %s for %s", file_name, dist_name)
 
         original_bytes = self._download_file(dist_name, file_name)
-        tweaked_bytes = self._tweak_file(original_bytes, file_name)
+        tweaked_bytes = self._tweak_file(dist_name, file_name, original_bytes)
 
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
@@ -238,8 +259,72 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         logger.debug("Headers: %r", result.headers.items())
         return result.read()
 
-    def _tweak_file(self, original_bytes: bytes, file_name: str) -> bytes:
-        # TODO:
+    def _tweak_file(self, dist_name: str, file_name: str, original_bytes: bytes) -> bytes:
+        if not file_name.lower().endswith(".tar.gz"):
+            return original_bytes
+
+        # In case of upip packages (tar.gz-s without setup.py) reverse following process:
+        # https://github.com/micropython/micropython-lib/commit/3a6ab0b
+
+        in_tar = tarfile.open(fileobj=io.BytesIO(original_bytes), mode="r:gz")
+        out_buffer = io.BytesIO()
+        out_tar = tarfile.open(fileobj=out_buffer, mode="w:gz")
+
+
+        py_modules = []
+        packages = []
+        metadata_bytes = None
+
+        for info in in_tar:
+            logger.debug("Processing %r", info)
+            with in_tar.extractfile(info) as f:
+                content = f.read()
+
+            # all existing files need to be added without changing
+            out_tar.addfile(info, io.BytesIO(content))
+
+            if "/" in info.name:
+                wrapper_dir, rel_name = info.name.split("/", maxsplit=1)
+            else:
+                assert info.isdir()
+                wrapper_dir, rel_name = info.name, ""
+
+            assert wrapper_dir.startswith(dist_name)
+
+            rel_name = rel_name.strip("/")
+            rel_segments = rel_name.split("/")
+
+
+            # collect information about the original tar
+            if rel_name == "setup.py":
+                logger.debug("The archive contains setup.py. No tweaks needed")
+                return original_bytes
+            elif ".egg-info" in rel_name:
+                if rel_name.endswith(".egg-info/PKG-INFO"):
+                    metadata_bytes = content
+            elif len(rel_segments) == 1:
+                # toplevel item outside of egg-info
+                if info.isfile() and rel_name.endswith(".py"):
+                    # toplevel module
+                    module_name = rel_name[:-len(".py")]
+                    py_modules.append(module_name)
+                else:
+                    assert info.isdir()
+                    # Assuming all toplevel directories correspond to packages.
+                    packages.append(rel_name)
+            else:
+                # Assuming an item inside a subdirectory.
+                # If it's a py, it will be included together with containing package,
+                # otherwise it will be picked up by package_data wildcard expression.
+                if rel_segments[0] not in packages:
+                    # directories may not have their own entry
+                    packages.append(rel_segments[0])
+
+        logger.debug("%s is optimized for upip. Re-constructing missing files", file_name)
+        logger.debug("py_modules: %r", py_modules)
+        logger.debug("packages: %r", packages)
+        logger.debug("metadata; %r", metadata_bytes)
+
         return original_bytes
 
 
@@ -604,9 +689,9 @@ def main(raw_args: Optional[List[str]] = None) -> int:
         help="Install a package",
         description=textwrap.dedent(
             """
-        Meant for installing both upip and pip compatible distribution packages from 
-        PyPI and micropython.org/pi to a local directory, USB volume or directly to 
-        MicroPython filesystem over serial connection (requires rshell).    
+        Meant for installing both upip and pip compatible distribution packages from
+        PyPI and micropython.org/pi to a local directory, USB volume or directly to
+        MicroPython filesystem over serial connection (requires rshell).
     """
         ).strip(),
     )
