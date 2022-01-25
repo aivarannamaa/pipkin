@@ -257,7 +257,6 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         py_modules = []
         packages = []
         metadata_bytes = None
-        metadata_tarinfo = None
         requirements = []
         egg_info_path = None
 
@@ -287,15 +286,8 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
                 if rel_name.endswith(".egg-info/PKG-INFO"):
                     egg_info_path = rel_name[: -len("/PKG-INFO")]
                     metadata_bytes = content
-                    metadata_tarinfo = info
                 elif rel_name.endswith(".egg-info/requires.txt"):
                     requirements = content.decode("utf-8").strip().splitlines()
-
-                # if "_" in rel_name and "_" not in dist_name:
-                #    # Seems that the folder name gets messed up during upip optimization
-                #    messed_up_dist_name = dist_name.replace("-", "_")
-                #    out_info.name = out_info.name.replace(messed_up_dist_name, dist_name)
-
             elif len(rel_segments) == 1:
                 # toplevel item outside of egg-info
                 if info.isfile() and rel_name.endswith(".py"):
@@ -348,11 +340,13 @@ tag_date = 0
             out_tar,
         )
 
+        # TODO: recreate SOURCES.txt and test with data files
+
         out_tar.close()
 
         out_bytes = out_buffer.getvalue()
 
-        #with open("_temp.tar.gz", "wb") as fp:
+        # with open("_temp.tar.gz", "wb") as fp:
         #    fp.write(out_bytes)
 
         return out_bytes
@@ -522,6 +516,7 @@ def _install_with_pip(specs: List[str], target_dir: str, index_urls: List[str]):
     if index_args == ["--index-url", "https://pypi.org/pypi"]:
         # for some reason, this form does not work for some versions of some packages
         # (eg. micropython-os below 0.4.4)
+        # TODO: ?
         index_args = []
 
     port = 8763  # TODO:
