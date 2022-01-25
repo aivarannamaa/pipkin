@@ -23,7 +23,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import copy
-import gzip
 import io
 import json
 import os.path
@@ -88,6 +87,7 @@ steps:
 
 """
 
+
 class SimpleUrlsParser(HTMLParser):
     def error(self, message):
         pass
@@ -110,6 +110,7 @@ class SimpleUrlsParser(HTMLParser):
 
     def handle_endtag(self, tag):
         pass
+
 
 class BaseIndexDownloader:
     def __init__(self, index_url: str):
@@ -248,8 +249,9 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         # In case of upip packages (tar.gz-s without setup.py) reverse following process:
         # https://github.com/micropython/micropython-lib/commit/3a6ab0b
 
-        decompressed_original = gzip.decompress(original_bytes)
-        in_tar = tarfile.open(fileobj=io.BytesIO(decompressed_original), mode="r")
+        in_tar = tarfile.open(fileobj=io.BytesIO(original_bytes), mode="r:gz")
+        out_buffer = io.BytesIO()
+        out_tar = tarfile.open(fileobj=out_buffer, mode="w:gz")
 
         wrapper_dir = None
         py_modules = []
@@ -257,6 +259,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         metadata_bytes = None
         metadata_tarinfo = None
         requirements = []
+        egg_info_path = None
 
         for info in in_tar:
             logger.debug("Processing %r", info)
@@ -274,16 +277,25 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
             rel_name = rel_name.strip("/")
             rel_segments = rel_name.split("/")
 
+            out_info = copy.copy(info)
+
             # collect information about the original tar
             if rel_name == "setup.py":
                 logger.debug("The archive contains setup.py. No tweaks needed")
                 return original_bytes
             elif ".egg-info" in rel_name:
                 if rel_name.endswith(".egg-info/PKG-INFO"):
+                    egg_info_path = rel_name[: -len("/PKG-INFO")]
                     metadata_bytes = content
                     metadata_tarinfo = info
                 elif rel_name.endswith(".egg-info/requires.txt"):
                     requirements = content.decode("utf-8").strip().splitlines()
+
+                # if "_" in rel_name and "_" not in dist_name:
+                #    # Seems that the folder name gets messed up during upip optimization
+                #    messed_up_dist_name = dist_name.replace("-", "_")
+                #    out_info.name = out_info.name.replace(messed_up_dist_name, dist_name)
+
             elif len(rel_segments) == 1:
                 # toplevel item outside of egg-info
                 if info.isfile() and rel_name.endswith(".py"):
@@ -302,6 +314,9 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
                     # directories may not have their own entry
                     packages.append(rel_segments[0])
 
+            # all existing files need to be added without changing
+            out_tar.addfile(out_info, io.BytesIO(content))
+
         assert wrapper_dir
         assert metadata_bytes
 
@@ -314,24 +329,39 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         setup_py = self._create_setup_py(metadata, py_modules, packages, requirements)
         logger.debug("setup.py: %s", setup_py)
 
-        setup_py_bytes = setup_py.encode("utf-8")
-        setup_py_stream = io.BytesIO(setup_py_bytes)
-        setup_py_tarinfo = tarfile.TarInfo(name=wrapper_dir + "/setup.py")
+        self._add_file_to_tar(wrapper_dir + "/setup.py", setup_py.encode("utf-8"), out_tar)
+        self._add_file_to_tar(wrapper_dir + "/PKG-INFO", metadata_bytes, out_tar)
+        self._add_file_to_tar(
+            wrapper_dir + "/setup.cfg",
+            b"""[egg_info]
+tag_build = 
+tag_date = 0
+""",
+            out_tar,
+        )
+        self._add_file_to_tar(
+            wrapper_dir + "/" + egg_info_path + "/dependency_links.txt", b"\n", out_tar
+        )
+        self._add_file_to_tar(
+            wrapper_dir + "/" + egg_info_path + "/top_level.txt",
+            ("\n".join(packages + py_modules) + "\n").encode("utf-8"),
+            out_tar,
+        )
 
-        out_buffer = io.BytesIO(decompressed_original)
-        len_before = len(decompressed_original)
-        out_tar = tarfile.open(fileobj=out_buffer, mode="a:")
-        #out_tar.add("setup.py", arcname="mumm.py")
-        out_tar.addfile(setup_py_tarinfo, setup_py_stream)
         out_tar.close()
 
-        out_buffer.seek(0)
         out_bytes = out_buffer.getvalue()
-        assert out_bytes != decompressed_original
-        compressed_out_butes = gzip.compress(out_bytes)
-        with open("_temp.tar.gz", "bw") as fp:
-            fp.write(compressed_out_butes)
-        return compressed_out_butes
+
+        #with open("_temp.tar.gz", "wb") as fp:
+        #    fp.write(out_bytes)
+
+        return out_bytes
+
+    def _add_file_to_tar(self, name: str, content: bytes, tar: tarfile.TarFile) -> None:
+        stream = io.BytesIO(content)
+        info = tarfile.TarInfo(name=name)
+        info.size = len(content)
+        tar.addfile(info, stream)
 
     def _parse_metadata(self, metadata_bytes) -> Dict[str, str]:
         metadata = email.parser.Parser().parsestr(metadata_bytes.decode("utf-8"))
@@ -349,23 +379,30 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
             )
         }
 
-    def _create_setup_py(self, metadata: Dict[str, str], py_modules: List[str], packages: List[str],
-                         requirements: List[str]) -> str:
+    def _create_setup_py(
+        self,
+        metadata: Dict[str, str],
+        py_modules: List[str],
+        packages: List[str],
+        requirements: List[str],
+    ) -> str:
 
         src = dedent(
             f"""
             from setuptools import setup
             setup (
-            """).lstrip()
+            """
+        ).lstrip()
 
-        for src_key, target_key in [("Name", "name"),
-                                    ("Version", "version"),
-                                    ("Summary", "description"),
-                                    ("Home-page", "url"),
-                                    ("Author", "author"),
-                                    ("Author-email", "author_email"),
-                                    ("License", "license")
-                                    ]:
+        for src_key, target_key in [
+            ("Name", "name"),
+            ("Version", "version"),
+            ("Summary", "description"),
+            ("Home-page", "url"),
+            ("Author", "author"),
+            ("Author-email", "author_email"),
+            ("License", "license"),
+        ]:
             if src_key in metadata:
                 src += f"    {target_key}={metadata[src_key]!r},\n"
 
@@ -386,10 +423,6 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
 
 
 class UserError(RuntimeError):
-    pass
-
-
-class NotUpipCompatible(RuntimeError):
     pass
 
 
@@ -474,104 +507,6 @@ def _get_rshell_command() -> Optional[List[str]]:
         return None
 
 
-def _install_all_upip_compatible(
-    specs: List[str], install_dir: str, index_urls: List[str]
-) -> List[str]:
-    """Returns list of specs which must be installed with pip"""
-    installed_specs = set()
-    specs_to_be_processed = specs.copy()
-    pip_specs = []
-
-    while specs_to_be_processed:
-        spec = specs_to_be_processed.pop(0)
-        if spec in installed_specs or spec in pip_specs:
-            continue
-
-        req = pkg_resources.Requirement.parse(spec)
-
-        logger.info("Processing '%s'", req)
-        meta, version = _fetch_metadata_and_resolve_version(req, index_urls)
-        logger.info("Inspecting version %s", version)
-        assets = meta["releases"][version]
-
-        if len(assets) != 1 or not assets[0]["url"].endswith(".tar.gz"):
-            logger.info(
-                "'%s' will be installed with pip (not having single tar.gz asset).",
-                req.project_name,
-            )
-            pip_specs.append(spec)
-            continue
-
-        try:
-            dep_specs = _install_single_upip_compatible_from_url(
-                req.project_name, assets[0]["url"], install_dir
-            )
-            installed_specs.add(spec)
-            if dep_specs:
-                logger.info("Dependencies of '%s': %s", spec, dep_specs)
-                for dep_spec in dep_specs:
-                    if dep_spec not in installed_specs and dep_spec not in specs_to_be_processed:
-                        specs_to_be_processed.append(dep_spec)
-        except NotUpipCompatible:
-            pip_specs.append(spec)
-
-    return pip_specs
-
-
-def _install_single_upip_compatible_from_url(
-    project_name: str, url: str, target_dir: str
-) -> List[str]:
-    with urlopen(url) as fp:
-        download_data = fp.read()
-
-    tar = tarfile.open(fileobj=io.BytesIO(download_data), mode="r:gz")
-
-    deps = []
-
-    content: Dict[str, Optional[bytes]] = {}
-
-    for info in tar:
-        if "/" in info.name:
-            dist_name, rel_name = info.name.split("/", maxsplit=1)
-        else:
-            dist_name, rel_name = info.name, ""
-
-        if rel_name == "setup.py":
-            logger.debug("The archive contains setup.py. The package will be installed with pip")
-            raise NotUpipCompatible()
-
-        if ".egg-info/PKG-INFO" in rel_name:
-            continue
-
-        if ".egg-info/requires.txt" in rel_name:
-            for line in tar.extractfile(info):
-                line = line.strip()
-                if line and not line.startswith(b"#"):
-                    deps.append(line.decode())
-            continue
-
-        if ".egg-info" in rel_name:
-            continue
-
-        if info.isdir():
-            content[os.path.join(target_dir, rel_name)] = None
-        elif info.isfile():
-            content[os.path.join(target_dir, rel_name)] = tar.extractfile(info).read()
-
-    # write files only after the package is fully inspected and found to be upip compatible
-    logger.info("Extracting '%s' from %s to %s", project_name, url, os.path.abspath(target_dir))
-    for path in content:
-        data = content[path]
-        if data is None:
-            os.makedirs(path, exist_ok=True)
-        else:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "wb") as fp:
-                fp.write(data)
-
-    return deps
-
-
 def _install_with_pip(specs: List[str], target_dir: str, index_urls: List[str]):
     global _server
 
@@ -599,6 +534,7 @@ def _install_with_pip(specs: List[str], target_dir: str, index_urls: List[str]):
         "--disable-pip-version-check",
         "install",
         "--no-compile",
+        "--no-cache-dir",
         "--upgrade",
         "--target",
         target_dir,
@@ -616,66 +552,6 @@ def _install_with_pip(specs: List[str], target_dir: str, index_urls: List[str]):
     logger.debug("Calling pip: %s", shlex_join(pip_cmd))
     subprocess.check_call(pip_cmd)
     close_server()
-
-
-def _fetch_metadata_and_resolve_version(
-    req: Requirement, index_urls: List[str]
-) -> Tuple[Dict[str, Any], str]:
-
-    ver_specs = req.specs
-
-    for i, index_url in enumerate(index_urls):
-        try:
-            url = "%s/%s/json" % (index_url, req.project_name)
-            logger.info("Querying package metadata from %s", url)
-            with urlopen(url) as fp:
-                meta = json.load(fp)
-            current_version = meta["info"]["version"]
-
-            if not ver_specs:
-                return meta, current_version
-
-            ver = _resolve_version(req, meta)
-            if ver is None:
-                logger.info("Could not find suitable version from %s", index_url)
-                continue
-
-            return meta, ver
-        except HTTPError as e:
-            if e.code == 404:
-                logger.info("Could not find '%s' from %s", req.project_name, index_url)
-            else:
-                raise
-
-    raise UserError(
-        "Could not find '%s' from any of the indexes %s" % (req.project_name, index_urls)
-    )
-
-
-def _read_requirements(req_file: str) -> List[str]:
-    if not os.path.isfile(req_file):
-        raise UserError("Can't find file '%s'" % req_file)
-
-    result = []
-    with open(req_file, "r", errors="replace") as fp:
-        for line in fp:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                result.append(line)
-
-    return result
-
-
-def _resolve_version(req: Requirement, main_meta: Dict[str, Any]) -> Optional[str]:
-    matching_versions = []
-    for ver in main_meta["releases"]:
-        if ver in req and len(main_meta["releases"][ver]) > 0:
-            matching_versions.append(ver)
-
-    if not matching_versions:
-        return None
-
-    return sorted(matching_versions, key=pkg_resources.parse_version)[-1]
 
 
 def _remove_unneeded_files(path: str) -> None:
@@ -702,7 +578,7 @@ def _remove_unneeded_files(path: str) -> None:
             "rainbowio.py",
         ]
 
-    unneeded_suffixes = [".dist-info", ".egg-info", ".pyc"]
+    unneeded_suffixes = [".pyc"]
 
     for name in os.listdir(path):
         if name in unneeded or any(name.endswith(suffix) for suffix in unneeded_suffixes):
@@ -721,6 +597,20 @@ def error(msg):
         print(msg, file=sys.stderr)
 
     return 1
+
+
+def _read_requirements(req_file: str) -> List[str]:
+    if not os.path.isfile(req_file):
+        raise UserError("Can't find file '%s'" % req_file)
+
+    result = []
+    with open(req_file, "r", errors="replace") as fp:
+        for line in fp:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                result.append(line)
+
+    return result
 
 
 def main(raw_args: Optional[List[str]] = None) -> int:
