@@ -88,94 +88,6 @@ steps:
 """
 
 
-class SimpleUrlsParser(HTMLParser):
-    def error(self, message):
-        pass
-
-    def __init__(self):
-        self._current_tag: str = ""
-        self._current_attrs: List[Tuple[str, str]] = []
-        self.file_urls: Dict[str, str] = {}
-        super().__init__()
-
-    def handle_starttag(self, tag: str, attrs: List[Tuple[str, str]]) -> None:
-        self._current_tag = tag
-        self._current_attrs = attrs
-
-    def handle_data(self, data: str) -> None:
-        if self._current_tag == "a":
-            for att, val in self._current_attrs:
-                if att == "href":
-                    self.file_urls[data] = val
-
-    def handle_endtag(self, tag):
-        pass
-
-
-class BaseIndexDownloader:
-    def __init__(self, index_url: str):
-        self._index_url = index_url.rstrip("/")
-        self._file_urls_cache: Dict[str, Dict[str, str]] = {}
-
-    def get_file_urls(self, dist_name: str) -> Dict[str, str]:
-        if dist_name not in self._file_urls_cache:
-            self._file_urls_cache[dist_name] = self._download_file_urls(dist_name)
-
-        return self._file_urls_cache[dist_name]
-
-    def _download_file_urls(self, dist_name) -> Dict[str, str]:
-        raise NotImplementedError()
-
-
-class SimpleIndexDownloader(BaseIndexDownloader):
-    def _download_file_urls(self, dist_name) -> Dict[str, str]:
-        url = f"{self._index_url}/{dist_name}"
-        logger.info("Downloading file urls from simple index %s", url)
-
-        with urlopen(url) as fp:
-            parser = SimpleUrlsParser()
-            parser.feed(fp.read().decode("utf-8"))
-            return parser.file_urls
-
-
-class JsonIndexDownloader(BaseIndexDownloader):
-    def _download_file_urls(self, dist_name) -> Dict[str, str]:
-        metadata_url = f"{self._index_url}/{dist_name}/json"
-        logger.info("Downloading file urls from json index at %s", metadata_url)
-
-        result = {}
-        with urlopen(metadata_url) as fp:
-            data = json.load(fp)
-            releases = data["releases"]
-            for ver in releases:
-                for file in releases[ver]:
-                    file_url = file["url"]
-                    if "filename" in file:
-                        file_name = file["filename"]
-                    else:
-                        # micropython.org/pi doesn't have it
-                        file_name = file_url.split("/")[-1]
-                        # may be missing micropython prefix
-                        if not file_name.startswith(dist_name):
-                            # Let's hope version part doesn't contain dashes
-                            _, suffix = file_name.split("-")
-                            file_name = dist_name + "-" + suffix
-                    result[file_name] = file_url
-
-        return result
-
-
-class PipkinServer(HTTPServer):
-    def __init__(
-        self,
-        server_address: Tuple[str, int],
-        request_handler_class: Callable[..., BaseRequestHandler],
-    ):
-        self.downloader = SimpleIndexDownloader(PYPI_SIMPLE_INDEX)
-        self.downloader = JsonIndexDownloader(MP_ORG_INDEX)
-        super().__init__(server_address, request_handler_class)
-
-
 _server: Optional[PipkinServer] = None
 
 
@@ -187,401 +99,9 @@ def close_server():
         _server = None
 
 
-class PipkinProxyHandler(BaseHTTPRequestHandler):
-    def __init__(self, request: bytes, client_address: Tuple[str, int], server: BaseServer):
-        logger.debug("Creating new handler")
-        assert isinstance(server, PipkinServer)
-        self._downloader = server.downloader
-        super(PipkinProxyHandler, self).__init__(request, client_address, server)
-
-    def do_GET(self) -> None:
-        path = self.path.strip("/")
-        logger.debug("do_GET for %s", path)
-        if "/" in path:
-            assert path.count("/") == 1
-            self._serve_file(*path.split("/"))
-        else:
-            self._serve_distribution_page(path)
-
-    def _serve_distribution_page(self, dist_name: str) -> None:
-        logger.debug("Serving index page for %s", dist_name)
-        file_urls = self._downloader.get_file_urls(dist_name)
-        logger.debug("File urls: %r", file_urls)
-        self.send_response(200)
-        self.send_header("Content-type", f"text/html; charset={SERVER_ENCODING}")
-        self.end_headers()
-        self.wfile.write("<!DOCTYPE html><html><body>\n".encode(SERVER_ENCODING))
-        for file_name in file_urls:
-            self.wfile.write(
-                f"<a href='/{dist_name}/{file_name}/'>{file_name}</a>\n".encode(SERVER_ENCODING)
-            )
-        self.wfile.write("</body></html>".encode(SERVER_ENCODING))
-
-    def _serve_file(self, dist_name: str, file_name: str):
-        logger.debug("Serving %s for %s", file_name, dist_name)
-
-        original_bytes = self._download_file(dist_name, file_name)
-        tweaked_bytes = self._tweak_file(dist_name, file_name, original_bytes)
-
-        self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.end_headers()
-
-        block_size = 4096
-        for start_index in range(0, len(tweaked_bytes), block_size):
-            block = tweaked_bytes[start_index : start_index + block_size]
-            self.wfile.write(block)
-
-    def _download_file(self, dist_name: str, file_name: str) -> bytes:
-        urls = self._downloader.get_file_urls(dist_name)
-        # TODO: try all downloaders
-        assert file_name in urls
-        url = urls[file_name]
-        logger.debug("Downloading file from %s", url)
-        result = urlopen(url)
-        logger.debug("Headers: %r", result.headers.items())
-        return result.read()
-
-    def _tweak_file(self, dist_name: str, file_name: str, original_bytes: bytes) -> bytes:
-        if not file_name.lower().endswith(".tar.gz"):
-            return original_bytes
-
-        # In case of upip packages (tar.gz-s without setup.py) reverse following process:
-        # https://github.com/micropython/micropython-lib/commit/3a6ab0b
-
-        in_tar = tarfile.open(fileobj=io.BytesIO(original_bytes), mode="r:gz")
-        out_buffer = io.BytesIO()
-        out_tar = tarfile.open(fileobj=out_buffer, mode="w:gz")
-
-        wrapper_dir = None
-        py_modules = []
-        packages = []
-        metadata_bytes = None
-        requirements = []
-        egg_info_path = None
-
-        for info in in_tar:
-            logger.debug("Processing %r", info)
-            with in_tar.extractfile(info) as f:
-                content = f.read()
-
-            if "/" in info.name:
-                wrapper_dir, rel_name = info.name.split("/", maxsplit=1)
-            else:
-                assert info.isdir()
-                wrapper_dir, rel_name = info.name, ""
-
-            assert wrapper_dir.startswith(dist_name)
-
-            rel_name = rel_name.strip("/")
-            rel_segments = rel_name.split("/")
-
-            out_info = copy.copy(info)
-
-            # collect information about the original tar
-            if rel_name == "setup.py":
-                logger.debug("The archive contains setup.py. No tweaks needed")
-                return original_bytes
-            elif ".egg-info" in rel_name:
-                if rel_name.endswith(".egg-info/PKG-INFO"):
-                    egg_info_path = rel_name[: -len("/PKG-INFO")]
-                    metadata_bytes = content
-                elif rel_name.endswith(".egg-info/requires.txt"):
-                    requirements = content.decode("utf-8").strip().splitlines()
-            elif len(rel_segments) == 1:
-                # toplevel item outside of egg-info
-                if info.isfile() and rel_name.endswith(".py"):
-                    # toplevel module
-                    module_name = rel_name[: -len(".py")]
-                    py_modules.append(module_name)
-                else:
-                    assert info.isdir()
-                    # Assuming all toplevel directories correspond to packages.
-                    packages.append(rel_name)
-            else:
-                # Assuming an item inside a subdirectory.
-                # If it's a py, it will be included together with containing package,
-                # otherwise it will be picked up by package_data wildcard expression.
-                if rel_segments[0] not in packages:
-                    # directories may not have their own entry
-                    packages.append(rel_segments[0])
-
-            # all existing files need to be added without changing
-            out_tar.addfile(out_info, io.BytesIO(content))
-
-        assert wrapper_dir
-        assert metadata_bytes
-
-        logger.debug("%s is optimized for upip. Re-constructing missing files", file_name)
-        logger.debug("py_modules: %r", py_modules)
-        logger.debug("packages: %r", packages)
-        logger.debug("requirements: %r", requirements)
-        metadata = self._parse_metadata(metadata_bytes)
-        logger.debug("metadata: %r", metadata)
-        setup_py = self._create_setup_py(metadata, py_modules, packages, requirements)
-        logger.debug("setup.py: %s", setup_py)
-
-        self._add_file_to_tar(wrapper_dir + "/setup.py", setup_py.encode("utf-8"), out_tar)
-        self._add_file_to_tar(wrapper_dir + "/PKG-INFO", metadata_bytes, out_tar)
-        self._add_file_to_tar(
-            wrapper_dir + "/setup.cfg",
-            b"""[egg_info]
-tag_build = 
-tag_date = 0
-""",
-            out_tar,
-        )
-        self._add_file_to_tar(
-            wrapper_dir + "/" + egg_info_path + "/dependency_links.txt", b"\n", out_tar
-        )
-        self._add_file_to_tar(
-            wrapper_dir + "/" + egg_info_path + "/top_level.txt",
-            ("\n".join(packages + py_modules) + "\n").encode("utf-8"),
-            out_tar,
-        )
-
-        # TODO: recreate SOURCES.txt and test with data files
-
-        out_tar.close()
-
-        out_bytes = out_buffer.getvalue()
-
-        # with open("_temp.tar.gz", "wb") as fp:
-        #    fp.write(out_bytes)
-
-        return out_bytes
-
-    def _add_file_to_tar(self, name: str, content: bytes, tar: tarfile.TarFile) -> None:
-        stream = io.BytesIO(content)
-        info = tarfile.TarInfo(name=name)
-        info.size = len(content)
-        tar.addfile(info, stream)
-
-    def _parse_metadata(self, metadata_bytes) -> Dict[str, str]:
-        metadata = email.parser.Parser().parsestr(metadata_bytes.decode("utf-8"))
-        return {
-            key: metadata.get(key)
-            for key in (
-                "Metadata-Version",
-                "Name",
-                "Version",
-                "Summary",
-                "Home-page",
-                "Author",
-                "Author-email",
-                "License",
-            )
-        }
-
-    def _create_setup_py(
-        self,
-        metadata: Dict[str, str],
-        py_modules: List[str],
-        packages: List[str],
-        requirements: List[str],
-    ) -> str:
-
-        src = dedent(
-            f"""
-            from setuptools import setup
-            setup (
-            """
-        ).lstrip()
-
-        for src_key, target_key in [
-            ("Name", "name"),
-            ("Version", "version"),
-            ("Summary", "description"),
-            ("Home-page", "url"),
-            ("Author", "author"),
-            ("Author-email", "author_email"),
-            ("License", "license"),
-        ]:
-            if src_key in metadata:
-                src += f"    {target_key}={metadata[src_key]!r},\n"
-
-        if requirements:
-            src += f"    install_required={requirements!r},\n"
-
-        if py_modules:
-            src += f"    py_modules={py_modules!r},\n"
-
-        if packages:
-            src += f"    packages={packages!r},\n"
-
-        # include all other files as package data
-        src += "    package_data={'*': ['*', '*/*', '*/*/*', '*/*/*/*', '*/*/*/*/*', '*/*/*/*/*/*', '*/*/*/*/*/*/*', '*/*/*/*/*/*/*/*']}\n"
-
-        src += ")\n"
-        return src
-
-
 class UserError(RuntimeError):
     pass
 
-
-def install(
-    spec: Union[List[str], str],
-    target_dir: str,
-    index_urls: List[str] = None,
-    port: Optional[str] = None,
-):
-    if not index_urls:
-        index_urls = DEFAULT_INDEX_URLS
-
-    if isinstance(spec, str):
-        specs = [spec]
-    else:
-        specs = spec
-
-    temp_dir = tempfile.mkdtemp()
-    try:
-        _install_with_pip(specs, temp_dir, index_urls)
-        _remove_unneeded_files(temp_dir)
-        if port is not None:
-            _copy_to_micropython_over_serial(temp_dir, port, target_dir)
-        else:
-            _copy_to_local_target_dir(temp_dir, target_dir)
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def _copy_to_local_target_dir(source_dir: str, target_dir: str):
-    logger.info("Copying files to %s", os.path.abspath(target_dir))
-    if not os.path.exists(target_dir):
-        logger.info("Target directory '%s' doesn't exist. Creating.", target_dir)
-        os.makedirs(target_dir, mode=0o700)
-
-    # Copying manually in order to be able to use os.fsync
-    # see https://learn.adafruit.com/adafruit-circuit-playground-express/creating-and-editing-code
-    # #1-use-an-editor-that-writes-out-the-file-completely-when-you-save-it
-    for root, dirs, files in os.walk(source_dir):
-        relative_dir = root[len(source_dir) :].lstrip("/\\")
-        full_target_dir = os.path.join(target_dir, relative_dir)
-        for dir_name in dirs:
-            full_path = os.path.join(full_target_dir, dir_name)
-            if os.path.isdir(full_path):
-                logger.info("Directory %s already exists", os.path.join(relative_dir, dir_name))
-            elif os.path.isfile(full_path):
-                raise UserError("Can't treat existing file %s as directory", full_path)
-            else:
-                logger.info("Creating %s", os.path.join(relative_dir, dir_name))
-                os.makedirs(full_path, 0o700)
-
-        for file_name in files:
-            full_source_path = os.path.join(root, file_name)
-            full_target_path = os.path.join(full_target_dir, file_name)
-            logger.debug("Preparing %s => %s", full_source_path, full_target_path)
-
-            if os.path.isfile(full_target_path):
-                logger.info("Overwriting %s", os.path.join(relative_dir, file_name))
-            elif os.path.isdir(full_target_path):
-                raise UserError("Can't treat existing directory %s as file", full_target_path)
-            else:
-                logger.info("Copying %s", os.path.join(relative_dir, file_name))
-
-            with open(full_source_path, "rb") as in_fp, open(full_target_path, "wb") as out_fp:
-                out_fp.write(in_fp.read())
-                out_fp.flush()
-                os.fsync(out_fp)
-
-
-def _copy_to_micropython_over_serial(source_dir: str, port: str, target_dir: str):
-    assert target_dir.startswith("/")
-
-    cmd = _get_rshell_command() + ["-p", port, "rsync", source_dir, "/pyboard" + target_dir]
-    logger.debug("Uploading with rsync: %s", shlex_join(cmd))
-    subprocess.check_call(cmd)
-
-
-def _get_rshell_command() -> Optional[List[str]]:
-    if shutil.which("rshell"):
-        return ["rshell"]
-    else:
-        return None
-
-
-def _install_with_pip(specs: List[str], target_dir: str, index_urls: List[str]):
-    global _server
-
-    logger.info("Installing with pip: %s", specs)
-
-    suitable_indexes = [url for url in index_urls if url != MP_ORG_INDEX]
-    if not suitable_indexes:
-        raise UserError("No suitable indexes for pip")
-
-    index_args = ["--index-url", suitable_indexes.pop(0)]
-    while suitable_indexes:
-        index_args += ["--extra-index-url", suitable_indexes.pop(0)]
-    if index_args == ["--index-url", "https://pypi.org/pypi"]:
-        # for some reason, this form does not work for some versions of some packages
-        # (eg. micropython-os below 0.4.4)
-        # TODO: ?
-        index_args = []
-
-    port = 8763  # TODO:
-    _server = PipkinServer(("", port), PipkinProxyHandler)
-    threading.Thread(name="pipkin proxy", target=_server.serve_forever).start()
-    index_args = ["--index-url", "http://localhost:{port}/".format(port=port)]
-
-    args = [
-        "--no-input",
-        "--disable-pip-version-check",
-        "install",
-        "--no-compile",
-        "--no-cache-dir",
-        "--upgrade",
-        "--target",
-        target_dir,
-    ] + index_args
-
-    pip_cmd = (
-        [
-            sys.executable,
-            "-m",
-            "pip",
-        ]
-        + args
-        + specs
-    )
-    logger.debug("Calling pip: %s", shlex_join(pip_cmd))
-    subprocess.check_call(pip_cmd)
-    close_server()
-
-
-def _remove_unneeded_files(path: str) -> None:
-    unneeded = ["Scripts" if os.name == "nt" else "bin", "__pycache__"]
-
-    if "adafruit_blinka" in os.listdir(path):
-        unneeded += [
-            "adafruit_blinka",
-            "adafruit_platformdetect",
-            "Adafruit_PureIO",
-            "microcontroller",
-            "pyftdi",
-            "serial",
-            "usb",
-            "analogio.py",
-            "bitbangio.py",
-            "board.py",
-            "busio.py",
-            "digitalio.py",
-            "micropython.py",
-            "neopixel_write.py",
-            "pulseio.py",
-            "pwmio.py",
-            "rainbowio.py",
-        ]
-
-    unneeded_suffixes = [".pyc"]
-
-    for name in os.listdir(path):
-        if name in unneeded or any(name.endswith(suffix) for suffix in unneeded_suffixes):
-            full_path = os.path.join(path, name)
-            if os.path.isfile(full_path):
-                os.remove(full_path)
-            else:
-                shutil.rmtree(full_path)
 
 
 def error(msg):
@@ -592,20 +112,6 @@ def error(msg):
         print(msg, file=sys.stderr)
 
     return 1
-
-
-def _read_requirements(req_file: str) -> List[str]:
-    if not os.path.isfile(req_file):
-        raise UserError("Can't find file '%s'" % req_file)
-
-    result = []
-    with open(req_file, "r", errors="replace") as fp:
-        for line in fp:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                result.append(line)
-
-    return result
 
 
 def main(raw_args: Optional[List[str]] = None) -> int:
@@ -694,24 +200,10 @@ def main(raw_args: Optional[List[str]] = None) -> int:
     )
     args = parser.parse_args(args=raw_args)
 
-    if args.command != "install":
-        sys.exit(error("Sorry, only 'install' command is supported at the moment"))
-
-    all_specs = args.specs
-    try:
-        for req_file in args.requirement_files:
-            all_specs.extend(_read_requirements(req_file))
-    except UserError as e:
-        sys.exit(error(str(e)))
-
-    if args.index_url:
-        index_urls = [args.index_url]
-    else:
-        index_urls = DEFAULT_INDEX_URLS
-
     if args.quiet and args.verbose:
         print("Can't be quiet and verbose at the same time", file=sys.stderr)
         sys.exit(1)
+
 
     if args.verbose:
         logging_level = logging.DEBUG
@@ -726,17 +218,22 @@ def main(raw_args: Optional[List[str]] = None) -> int:
     console_handler.setLevel(logging_level)
     logger.addHandler(console_handler)
 
+    # infer target
     if args.port and not _get_rshell_command():
         return error("Could not find rshell (required for uploading when serial port is given)")
 
     if args.port and not args.target_dir.startswith("/"):
         return error("If port is given then target dir must be absolute Unix-style path")
+    target = ...
+
+    if args.command == "install":
+
 
     if not all_specs:
         return error("At least one package specifier or non-empty requirements file is required")
 
     try:
-        install(all_specs, target_dir=args.target_dir, index_urls=index_urls, port=args.port)
+        install(args.specs, requirement_files=args.requirement_files, target_dir=args.target_dir, index_urls=index_urls, port=args.port)
     except KeyboardInterrupt:
         return 1
     except UserError as e:
