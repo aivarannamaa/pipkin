@@ -4,4 +4,4 @@
 
 echo
 echo "blackening ..."
-black pipkin.py
+black pipkin

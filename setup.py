@@ -56,6 +56,6 @@ setup(
     platforms=["Windows", "macOS", "Linux"],
     install_requires=requirements,
     python_requires=">=3.7",
-    py_modules=["pipkin"],
+    packages=["pipkin"],
     entry_points={"console_scripts": ["pipkin = pipkin:main"]},
 )

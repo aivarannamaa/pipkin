@@ -25,30 +25,21 @@ SOFTWARE.
 import copy
 import io
 import json
-import os.path
-import sys
+import logging
 import shlex
-import shutil
-import subprocess
 import tarfile
-import tempfile
-import textwrap
-import threading
 from html.parser import HTMLParser
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from socketserver import BaseRequestHandler, BaseServer
+from socketserver import BaseServer
 from textwrap import dedent
-from typing import Union, List, Dict, Any, Optional, Tuple, Callable
-from urllib.error import HTTPError
+from typing import List, Dict, Optional, Tuple
 from urllib.request import urlopen
-import pkg_resources
-import logging
 
-import typing
+from pipkin import UserError
 
 MP_ORG_INDEX = "https://micropython.org/pi"
 PYPI_SIMPLE_INDEX = "https://pypi.org/simple"
-
+SERVER_ENCODING = "utf-8"
 
 
 try:
@@ -60,17 +51,9 @@ except ImportError:
         return " ".join(shlex.quote(arg) for arg in split_command)
 
 
-from pkg_resources import Requirement
-
 import email.parser
 
 logger = logging.getLogger(__name__)
-
-def create_proxy(prefer_mp_org: Optional[bool],
-                 index_url: Optional[str],
-                 extra_index_urls: List[str]) -> HTTPServer:
-    port = 8763  # TODO:
-    return PipkinServer(("", port), PipkinProxyHandler)
 
 
 class SimpleUrlsParser(HTMLParser):
@@ -150,22 +133,40 @@ class JsonIndexDownloader(BaseIndexDownloader):
         return result
 
 
-class PipkinServer(HTTPServer):
+class PipkinProxy(HTTPServer):
     def __init__(
         self,
-        server_address: Tuple[str, int],
-        request_handler_class: Callable[..., BaseRequestHandler],
+        prefer_mp_org: Optional[bool],
+        index_url: Optional[str],
+        extra_index_urls: List[str],
     ):
-        self.downloader = SimpleIndexDownloader(PYPI_SIMPLE_INDEX)
-        self.downloader = JsonIndexDownloader(MP_ORG_INDEX)
-        super().__init__(server_address, request_handler_class)
+        self._downloaders = []
+        self._downloaders_by_dist_name = {}
+        if prefer_mp_org:
+            self._downloaders.append(JsonIndexDownloader(MP_ORG_INDEX))
+        self._downloaders.append(SimpleIndexDownloader(index_url or PYPI_SIMPLE_INDEX))
+        for url in extra_index_urls:
+            self._downloaders.append(SimpleIndexDownloader(url))
+        super().__init__(("", 0), PipkinProxyHandler)
+
+    def get_downloader_for_dist(self, dist_name: str) -> Optional[BaseIndexDownloader]:
+        if dist_name not in self._downloaders_by_dist_name:
+            for downloader in self._downloaders:
+                file_urls = downloader.get_file_urls(dist_name)
+                if file_urls:
+                    self._downloaders_by_dist_name[dist_name] = downloader
+                    break
+            else:
+                self._downloaders_by_dist_name[dist_name] = None
+
+        return self._downloaders_by_dist_name[dist_name]
 
 
 class PipkinProxyHandler(BaseHTTPRequestHandler):
     def __init__(self, request: bytes, client_address: Tuple[str, int], server: BaseServer):
         logger.debug("Creating new handler")
-        assert isinstance(server, PipkinServer)
-        self._downloader = server.downloader
+        assert isinstance(server, PipkinProxy)
+        self.proxy: PipkinProxy = server
         super(PipkinProxyHandler, self).__init__(request, client_address, server)
 
     def do_GET(self) -> None:
@@ -179,7 +180,13 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
 
     def _serve_distribution_page(self, dist_name: str) -> None:
         logger.debug("Serving index page for %s", dist_name)
-        file_urls = self._downloader.get_file_urls(dist_name)
+        downloader = self.proxy.get_downloader_for_dist(dist_name)
+        if downloader is None:
+            raise UserError(f"Distribution '{dist_name}' can't be found.")
+
+        # TODO: check https://discuss.python.org/t/community-testing-of-packaging-tools-against-non-warehouse-indexes/13442
+
+        file_urls = downloader.get_file_urls(dist_name)
         logger.debug("File urls: %r", file_urls)
         self.send_response(200)
         self.send_header("Content-type", f"text/html; charset={SERVER_ENCODING}")
@@ -207,8 +214,12 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
             self.wfile.write(block)
 
     def _download_file(self, dist_name: str, file_name: str) -> bytes:
-        urls = self._downloader.get_file_urls(dist_name)
-        # TODO: try all downloaders
+        downloader = self.proxy.get_downloader_for_dist(dist_name)
+        assert downloader is not None
+
+        urls = downloader.get_file_urls(dist_name)
+        assert urls
+
         assert file_name in urls
         url = urls[file_name]
         logger.debug("Downloading file from %s", url)
@@ -270,7 +281,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
                     py_modules.append(module_name)
                 else:
                     assert info.isdir()
-                    # Assuming all toplevel directories correspond to packages.
+                    # Assuming all toplevel directories represent packages.
                     packages.append(rel_name)
             else:
                 # Assuming an item inside a subdirectory.
@@ -388,5 +399,3 @@ tag_date = 0
 
         src += ")\n"
         return src
-
-
