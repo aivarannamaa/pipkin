@@ -3,4 +3,5 @@ build
 dist
 pipkin.egg-info
 venv
+temp_venv
 out

@@ -161,6 +161,9 @@ class PipkinProxy(HTTPServer):
 
         return self._downloaders_by_dist_name[dist_name]
 
+    def get_index_url(self) -> str:
+        return f"http://{self.server_name}:{self.server_port}"
+
 
 class PipkinProxyHandler(BaseHTTPRequestHandler):
     def __init__(self, request: bytes, client_address: Tuple[str, int], server: BaseServer):
