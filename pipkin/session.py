@@ -24,8 +24,9 @@ from pipkin.util import (
 
 logger = getLogger(__name__)
 
-PRIVATE_PIP_VERSION = "22.0.*"
-INITIAL_VENV_DISTS = ["pip", "setuptools", "pkg_resources"]
+PRIVATE_PIP_SPEC = "==22.0.*"
+PRIVATE_WHEEL_SPEC = "==0.37.*"
+INITIAL_VENV_DISTS = ["pip", "setuptools", "pkg_resources", "wheel"]
 INITIAL_VENV_FILES = ["easy_install.py"]
 
 
@@ -38,13 +39,14 @@ class Session:
     def __init__(self, adapter: Adapter):
         self._adapter = adapter
         self._venv_lock, self._venv_dir = self._prepare_venv()
-        self._state_after_last_commit = self._get_venv_state()
 
     def install(
         self,
         specs: List[str],
         requirement_files: List[str] = None,
         constraint_files: List[str] = None,
+        user: bool = False,
+        target: Optional[str] = None,
         no_deps: bool = False,
         pre: bool = False,
         upgrade: bool = False,
@@ -85,12 +87,53 @@ class Session:
         for spec in specs:
             args.append(spec)
 
+        self._populate_venv()
+        state_before = self._get_venv_state()
         self._invoke_pip_with_pipkin_proxy(
             args,
             prefer_mp_org=prefer_mp_org,
             index_url=index_url,
             extra_index_urls=extra_index_urls,
         )
+        state_after = self._get_venv_state()
+
+        removed_meta_dirs = {name for name in state_before if name not in state_after}
+        assert not removed_meta_dirs
+
+        new_meta_dirs = {name for name in state_after if name not in state_before}
+        changed_meta_dirs = {
+            name
+            for name in state_after
+            if name in state_before and state_after[name] != state_before[name]
+        }
+
+        if target:
+            effective_target = target
+        elif user:
+            effective_target = self._adapter.get_user_packages_path()
+        else:
+            effective_target = self._adapter.get_default_target()
+
+        for meta_dir in changed_meta_dirs:
+            # if target is specified by --target or --user, then don't touch anything
+            # besides corresponding directory, regardless of the sys.path and possible hiding
+            dist_name, version = parse_dist_info_dir_name(meta_dir)
+            if target:
+                # pip doesn't remove old dist with --target unless --upgrade is given
+                if upgrade:
+                    self._adapter.remove_dist(dist_name=dist_name, target=target)
+            elif user:
+                self._adapter.remove_dist(
+                    dist_name=dist_name, target=self._adapter.get_user_packages_path()
+                )
+            else:
+                # remove the all installations of this dist, which would hide the new installation
+                self._adapter.remove_dist(
+                    dist_name=dist_name, target=effective_target, above_target=True
+                )
+
+        for meta_dir in new_meta_dirs | changed_meta_dirs:
+            self._upload_dist_by_meta_dir(meta_dir, effective_target)
 
     def list(
         self,
@@ -98,6 +141,8 @@ class Session:
         uptodate: bool = False,
         not_required: bool = False,
         pre: bool = False,
+        paths: List[str] = None,
+        user: bool = False,
         format: str = "columns",
         prefer_mp_org: Optional[bool] = None,
         index_url: Optional[str] = None,
@@ -117,6 +162,8 @@ class Session:
         if format:
             args += ["--format", format]
 
+        self._populate_venv(paths=paths, user=user)
+
         self._invoke_pip_with_pipkin_proxy(
             args,
             prefer_mp_org=prefer_mp_org,
@@ -133,43 +180,32 @@ class Session:
         for spec in specs:
             args.append(spec)
 
+        self._populate_venv()
+        state_before = self._get_venv_state()
         self._invoke_pip(args)
+        state_after = self._get_venv_state()
 
-    def commit(self) -> None:
-        current_state = self._get_venv_state()
-        self._commit_changes(self._state_after_last_commit, current_state)
-        self._state_after_last_commit = current_state
+        removed_meta_dirs = {name for name in state_before if name not in state_after}
+        for meta_dir_name in removed_meta_dirs:
+            dist_name, version = parse_dist_info_dir_name(meta_dir_name)
+            self._adapter.remove_dist(dist_name)
 
     def close(self) -> None:
+        self._clear_venv()
         self._venv_lock.release()
 
-    def _commit_changes(
-        self, dists_before: Dict[str, float], dists_after: Dict[str, float]
-    ) -> None:
-        removed_meta_dirs = {name for name in dists_before if name not in dists_after}
-        new_meta_dirs = {name for name in dists_after if name not in dists_before}
-        changed_meta_dirs = {
-            name
-            for name in dists_after
-            if name in dists_before and dists_after[name] != dists_before[name]
-        }
-
-        for meta_dir in removed_meta_dirs | changed_meta_dirs:
-            self._adapter.remove_dist_by_meta_dir(meta_dir)
-
-        for meta_dir in removed_meta_dirs | changed_meta_dirs:
-            self._upload_dist_by_meta_dir(meta_dir)
-
-    def _upload_dist_by_meta_dir(self, meta_dir_name) -> None:
+    def _upload_dist_by_meta_dir(self, meta_dir_name: str, target: str) -> None:
         record_path = os.path.join(self._get_venv_site_packages_path(), meta_dir_name, "RECORD")
         assert os.path.exists(record_path)
 
         with open(record_path) as fp:
             for line in fp.read().splitlines():
                 rel_path = line.split(",")[0]
-                full_path = os.path.normpath(os.path.join(self._get_venv_site_packages_path(), rel_path))
-                self._adapter.upload_to_target_dir(full_path, rel_path)
+                full_path = os.path.normpath(
+                    os.path.join(self._get_venv_site_packages_path(), rel_path)
+                )
 
+                self._adapter.upload_file(full_path, f"{target}/{rel_path}")
 
     def _prepare_venv(self) -> Tuple[BaseFileLock, str]:
         # 1. create sample venv (if doesn't exist yet)
@@ -189,7 +225,8 @@ class Session:
                     "--no-warn-script-location",
                     "install",
                     "--upgrade",
-                    f"pip=={PRIVATE_PIP_VERSION}",
+                    f"pip{PRIVATE_PIP_SPEC}",
+                    f"pip{PRIVATE_WHEEL_SPEC}",
                 ]
             )
             logger.info("Done preparing working environment.\n")
@@ -204,7 +241,6 @@ class Session:
             )
 
         self._clear_venv()
-        self._populate_venv()
 
         return lock, path
 
@@ -223,21 +259,27 @@ class Session:
                 assert os.path.isdir(full_path)
                 shutil.rmtree(full_path)
 
-    def _populate_venv(self) -> None:
-        meta_dirs = self._adapter.list_meta_dirs()
-        for name in meta_dirs:
+    def _populate_venv(self, paths: List[str] = None, user: bool = False) -> None:
+        """paths and user should be used only with list and freeze commands"""
+        assert not (paths and user)
+        if user:
+            effective_paths = [self._adapter.get_user_packages_path()]
+        else:
+            effective_paths = paths
+        self._clear_venv()
+        dist_versions = self._adapter.list_dists(effective_paths)
+        for name in dist_versions:
             assert name.endswith(".dist-info")
-            self._prepare_dummy_dist(name)
+            self._prepare_dummy_dist(name, dist_versions[name])
 
-    def _prepare_dummy_dist(self, meta_dir_name: str) -> None:
+    def _prepare_dummy_dist(self, dist_name: str, version: str) -> None:
+        meta_dir_name = f"{dist_name}-{version}.dist-info"
         sp_path = self._get_venv_site_packages_path()
         meta_path = os.path.join(sp_path, meta_dir_name)
         os.mkdir(meta_path, 0o755)
 
         for name in ["METADATA"]:
-            content = self._adapter.read_meta_file(
-                meta_dir_name + "/" + name
-            )
+            content = self._get_dist_meta_file(dist_name, version, name)
             with open(os.path.join(meta_path, name), "bw") as fp:
                 fp.write(content)
 
@@ -249,6 +291,10 @@ class Session:
             for name in ["METADATA", "INSTALLER", "RECORD"]:
                 fp.write(f"{meta_dir_name}/{name},,\n")
 
+    def _get_dist_meta_file(self, dist_name: str, version: str, file_name: str) -> bytes:
+        # TODO: add cache
+        return self._adapter.read_dist_meta_file(dist_name, version, file_name)
+
     def _check_create_dummy(self, meta_dir_name: str, rel_path: str) -> None:
         # TODO: remove
         target_path = os.path.normpath(os.path.join(meta_dir_name, rel_path))
@@ -258,7 +304,6 @@ class Session:
         os.makedirs(dir_name, 0o755, exist_ok=True)
         with open(target_path, "bw"):
             pass
-
 
     def _compute_venv_path(self) -> str:
         try:
@@ -315,6 +360,15 @@ class Session:
                 result[item_name] = os.stat(metadata_full_path).st_mtime
 
         return result
+
+    def _invoke_pip_with_pipkin_proxy_and_venv(
+        self,
+        pip_args: List[str],
+        prefer_mp_org: Optional[bool],
+        index_url: Optional[str],
+        extra_index_urls: List[str],
+    ) -> None:
+        self._prepare_venv()
 
     def _invoke_pip_with_pipkin_proxy(
         self,

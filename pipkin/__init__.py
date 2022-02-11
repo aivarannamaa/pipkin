@@ -72,7 +72,8 @@ def main(raw_args: Optional[List[str]] = None) -> int:
     install_parser.add_argument(
         "-p",
         "--port",
-        help="Serial port of the device "
+        "--prefix",
+        help="Serial port of the device or prefix of the  "
         "(specify if you want pipkin to upload the result to the device)",
         nargs="?",
     )
