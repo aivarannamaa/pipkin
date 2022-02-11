@@ -19,7 +19,7 @@ from pipkin.util import (
     get_user_cache_dir,
     get_venv_executable,
     get_venv_site_packages_path,
-    parse_dist_info_dir_name,
+    parse_meta_dir_name,
 )
 
 logger = getLogger(__name__)
@@ -117,7 +117,7 @@ class Session:
         for meta_dir in changed_meta_dirs:
             # if target is specified by --target or --user, then don't touch anything
             # besides corresponding directory, regardless of the sys.path and possible hiding
-            dist_name, version = parse_dist_info_dir_name(meta_dir)
+            dist_name, version = parse_meta_dir_name(meta_dir)
             if target:
                 # pip doesn't remove old dist with --target unless --upgrade is given
                 if upgrade:
@@ -187,7 +187,7 @@ class Session:
 
         removed_meta_dirs = {name for name in state_before if name not in state_after}
         for meta_dir_name in removed_meta_dirs:
-            dist_name, version = parse_dist_info_dir_name(meta_dir_name)
+            dist_name, version = parse_meta_dir_name(meta_dir_name)
             self._adapter.remove_dist(dist_name)
 
     def close(self) -> None:
@@ -267,19 +267,18 @@ class Session:
         else:
             effective_paths = paths
         self._clear_venv()
-        dist_versions = self._adapter.list_dists(effective_paths)
-        for name in dist_versions:
-            assert name.endswith(".dist-info")
-            self._prepare_dummy_dist(name, dist_versions[name])
+        dist_infos = self._adapter.list_dists(effective_paths)
+        for name in dist_infos:
+            meta_dir_name, original_path = dist_infos[name]
+            self._prepare_dummy_dist(name, meta_dir_name, original_path)
 
-    def _prepare_dummy_dist(self, dist_name: str, version: str) -> None:
-        meta_dir_name = f"{dist_name}-{version}.dist-info"
+    def _prepare_dummy_dist(self, meta_dir_name: str, original_path: str) -> None:
         sp_path = self._get_venv_site_packages_path()
         meta_path = os.path.join(sp_path, meta_dir_name)
         os.mkdir(meta_path, 0o755)
 
         for name in ["METADATA"]:
-            content = self._get_dist_meta_file(dist_name, version, name)
+            content = self._read_dist_meta_file(meta_dir_name, name, original_path)
             with open(os.path.join(meta_path, name), "bw") as fp:
                 fp.write(content)
 
@@ -291,9 +290,12 @@ class Session:
             for name in ["METADATA", "INSTALLER", "RECORD"]:
                 fp.write(f"{meta_dir_name}/{name},,\n")
 
-    def _get_dist_meta_file(self, dist_name: str, version: str, file_name: str) -> bytes:
+    def _read_dist_meta_file(
+        self, meta_dir_name: str, file_name: str, original_container_path: str
+    ) -> bytes:
         # TODO: add cache
-        return self._adapter.read_dist_meta_file(dist_name, version, file_name)
+        path = self._adapter.join_path(original_container_path, meta_dir_name, file_name)
+        return self._adapter.read_file(path)
 
     def _check_create_dummy(self, meta_dir_name: str, rel_path: str) -> None:
         # TODO: remove

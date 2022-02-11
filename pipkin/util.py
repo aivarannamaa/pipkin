@@ -62,7 +62,7 @@ def get_venv_site_packages_path(path: str) -> str:
     ).strip()
 
 
-def parse_dist_info_dir_name(name: str) -> Tuple[str, str]:
+def parse_meta_dir_name(name: str) -> Tuple[str, str]:
     assert name.endswith(".dist-info")
     name, version = name[: -len(".dist-info")].split("-")
     return name, version
