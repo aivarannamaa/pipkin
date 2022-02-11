@@ -6,7 +6,7 @@ import subprocess
 import sys
 import venv
 from logging import getLogger
-from typing import Optional, List, Dict, Tuple, Set
+from typing import Optional, List, Dict, Tuple
 
 import filelock
 from filelock import FileLock, BaseFileLock
@@ -132,6 +132,7 @@ class Session:
                     dist_name=dist_name, target=effective_target, above_target=True
                 )
 
+        self._adapter.create_dir_if_doesnt_exist(effective_target)
         for meta_dir in new_meta_dirs | changed_meta_dirs:
             self._upload_dist_by_meta_dir(meta_dir, effective_target)
 
@@ -199,13 +200,35 @@ class Session:
         assert os.path.exists(record_path)
 
         with open(record_path) as fp:
-            for line in fp.read().splitlines():
-                rel_path = line.split(",")[0]
-                full_path = os.path.normpath(
-                    os.path.join(self._get_venv_site_packages_path(), rel_path)
-                )
+            record_lines = fp.read().splitlines()
 
-                self._adapter.upload_file(full_path, f"{target}/{rel_path}")
+        ensured_dirs = {target}
+
+        for line in record_lines:
+            rel_path = line.split(",")[0]
+
+            # don't consider files installed to eg. bin-directory
+            if rel_path.startswith(".."):
+                continue
+
+            # TODO: skip some meta files
+
+            full_path = os.path.normpath(
+                os.path.join(self._get_venv_site_packages_path(), rel_path)
+            )
+
+            full_device_path = self._adapter.join_path(target, rel_path)
+            device_dir_name, _ = self._adapter.split_dir_and_basename(full_device_path)
+            if device_dir_name not in ensured_dirs:
+                self._adapter.create_dir_if_doesnt_exist(device_dir_name)
+                ensured_dirs.add(device_dir_name)
+
+            with open(full_path, "rb") as fp:
+                content = fp.read()
+
+            # TODO: simplify METADATA and RECORD
+
+            self._adapter.write_file(full_device_path, content)
 
     def _prepare_venv(self) -> Tuple[BaseFileLock, str]:
         # 1. create sample venv (if doesn't exist yet)
@@ -270,7 +293,7 @@ class Session:
         dist_infos = self._adapter.list_dists(effective_paths)
         for name in dist_infos:
             meta_dir_name, original_path = dist_infos[name]
-            self._prepare_dummy_dist(name, meta_dir_name, original_path)
+            self._prepare_dummy_dist(meta_dir_name, original_path)
 
     def _prepare_dummy_dist(self, meta_dir_name: str, original_path: str) -> None:
         sp_path = self._get_venv_site_packages_path()
@@ -315,8 +338,8 @@ class Session:
         except:
             exe = sys.executable
 
-        hash = hashlib.md5(str((exe, sys.version_info[0:2])).encode("utf-8")).hexdigest()
-        return os.path.join(get_user_cache_dir(), "pipkin", hash)
+        venv_name = hashlib.md5(str((exe, sys.version_info[0:2])).encode("utf-8")).hexdigest()
+        return os.path.join(get_user_cache_dir(), "pipkin", venv_name)
 
     def _is_initial_venv_item(self, name: str) -> bool:
         return (
@@ -362,15 +385,6 @@ class Session:
                 result[item_name] = os.stat(metadata_full_path).st_mtime
 
         return result
-
-    def _invoke_pip_with_pipkin_proxy_and_venv(
-        self,
-        pip_args: List[str],
-        prefer_mp_org: Optional[bool],
-        index_url: Optional[str],
-        extra_index_urls: List[str],
-    ) -> None:
-        self._prepare_venv()
 
     def _invoke_pip_with_pipkin_proxy(
         self,
