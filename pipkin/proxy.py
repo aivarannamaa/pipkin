@@ -404,7 +404,7 @@ tag_date = 0
                 src += f"    {target_key}={metadata[src_key]!r},\n"
 
         if requirements:
-            src += f"    install_required={requirements!r},\n"
+            src += f"    install_requires={requirements!r},\n"
 
         if py_modules:
             src += f"    py_modules={py_modules!r},\n"

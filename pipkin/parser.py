@@ -104,6 +104,7 @@ def parse_arguments(raw_args: Optional[List[str]] = None) -> Any:
     wheel_parser = subparsers.add_parser(
         "wheel", help="Build Wheel archives for your requirements and dependencies."
     )
+    cache_parser = subparsers.add_parser("cache", help="Inspect and manage pipkin cache.")
 
     # common options
     for parser in [install_parser, download_parser, wheel_parser]:
@@ -310,6 +311,8 @@ def parse_arguments(raw_args: Optional[List[str]] = None) -> Any:
         default=".",
         metavar="<dir>",
     )
+
+    cache_parser.add_argument("cache_command", choices=["dir", "info", "list", "purge"])
 
     args = main_parser.parse_args(args=raw_args)
 
