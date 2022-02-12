@@ -4,6 +4,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import venv
 from logging import getLogger
 from typing import Optional, List, Dict, Tuple
@@ -42,58 +43,50 @@ class Session:
 
     def install(
         self,
-        specs: List[str],
-        requirement_files: List[str] = None,
-        constraint_files: List[str] = None,
-        user: bool = False,
-        target: Optional[str] = None,
-        no_deps: bool = False,
+        specs: Optional[List[str]] = None,
+        requirement_files: Optional[List[str]] = None,
+        constraint_files: Optional[List[str]] = None,
         pre: bool = False,
+        no_deps: bool = False,
+        no_mp_org: bool = False,
+        index_url: Optional[str] = None,
+        extra_index_urls: Optional[List[str]] = None,
+        no_index: bool = False,
+        find_links: Optional[str] = None,
+        target: Optional[str] = None,
+        user: bool = False,
         upgrade: bool = False,
         upgrade_strategy: str = "only-if-needed",
         force_reinstall: bool = False,
-        ignore_installed: bool = False,
-        no_warn_conflicts: bool = False,
-        prefer_mp_org: Optional[bool] = None,
-        index_url: Optional[str] = None,
-        extra_index_urls: List[str] = None,
+        **_,
     ):
-
-        requirement_files = requirement_files or []
-        constraint_files = constraint_files or []
 
         args = ["install"]
 
-        for path in requirement_files:
-            args += ["-r", path]
-        for path in constraint_files:
-            args += ["-c", path]
-
-        if no_deps:
-            args.append("--no-deps")
-        if pre:
-            args.append("--pre")
         if upgrade:
             args.append("--upgrade")
         if upgrade_strategy:
             args += ["--upgrade-strategy", upgrade_strategy]
         if force_reinstall:
             args.append("--force-reinstall")
-        if ignore_installed:
-            args.append("--ignore-installed")
-        if no_warn_conflicts:
-            args.append("--no-warn-conflicts")
 
-        for spec in specs:
-            args.append(spec)
+        args += self._format_selection_args(
+            specs=specs,
+            requirement_files=requirement_files,
+            constraint_files=constraint_files,
+            pre=pre,
+            no_deps=no_deps,
+        )
 
         self._populate_venv()
         state_before = self._get_venv_state()
-        self._invoke_pip_with_pipkin_proxy(
+        self._invoke_pip_with_index_args(
             args,
-            prefer_mp_org=prefer_mp_org,
+            no_mp_org=no_mp_org,
             index_url=index_url,
             extra_index_urls=extra_index_urls,
+            no_index=no_index,
+            find_links=find_links,
         )
         state_after = self._get_venv_state()
 
@@ -136,18 +129,48 @@ class Session:
         for meta_dir in new_meta_dirs | changed_meta_dirs:
             self._upload_dist_by_meta_dir(meta_dir, effective_target)
 
+    def uninstall(
+        self,
+        packages: Optional[List[str]] = None,
+        requirement_files: Optional[List[str]] = None,
+        yes: bool = False,
+        **_,
+    ):
+        args = ["uninstall"]
+        if yes:
+            args += ["--yes"]
+
+        for rf in requirement_files or []:
+            args += ["-r", rf]
+        for package in packages or []:
+            args.append(package)
+
+        self._populate_venv()
+        state_before = self._get_venv_state()
+        self._invoke_pip(args)
+        state_after = self._get_venv_state()
+
+        removed_meta_dirs = {name for name in state_before if name not in state_after}
+        for meta_dir_name in removed_meta_dirs:
+            dist_name, version = parse_meta_dir_name(meta_dir_name)
+            self._adapter.remove_dist(dist_name)
+
     def list(
         self,
         outdated: bool = False,
         uptodate: bool = False,
         not_required: bool = False,
         pre: bool = False,
-        paths: List[str] = None,
+        paths: Optional[List[str]] = None,
         user: bool = False,
         format: str = "columns",
-        prefer_mp_org: Optional[bool] = None,
+        no_mp_org: Optional[bool] = False,
         index_url: Optional[str] = None,
-        extra_index_urls: List[str] = None,
+        extra_index_urls: Optional[List[str]] = None,
+        no_index: bool = False,
+        find_links: Optional[str] = None,
+        excludes: Optional[List[str]] = None,
+        **_,
     ):
 
         args = ["list"]
@@ -163,37 +186,147 @@ class Session:
         if format:
             args += ["--format", format]
 
+        for exclude in excludes or []:
+            args += ["--exclude", exclude]
+
         self._populate_venv(paths=paths, user=user)
 
-        self._invoke_pip_with_pipkin_proxy(
+        self._invoke_pip_with_index_args(
             args,
-            prefer_mp_org=prefer_mp_org,
+            no_mp_org=no_mp_org,
             index_url=index_url,
             extra_index_urls=extra_index_urls,
+            no_index=no_index,
+            find_links=find_links,
         )
 
-    def uninstall(self, specs: List[str], requirement_files: List[str]):
-        requirement_files = requirement_files or []
+    def show(self, packages: List[str], **_):
+        self._populate_venv()
+        self._invoke_pip(["show"] + packages)
 
-        args = ["uninstall"]
-        for rf in requirement_files:
-            args += ["-r", rf]
-        for spec in specs:
-            args.append(spec)
+    def freeze(
+        self,
+        paths: Optional[List[str]] = None,
+        user: bool = False,
+        excludes: Optional[List[str]] = None,
+        **_,
+    ):
+
+        args = ["freeze"]
+
+        for exclude in excludes or []:
+            args += ["--exclude", exclude]
+
+        self._populate_venv(paths=paths, user=user)
+        self._invoke_pip(args)
+
+    def check(self, **_):
+        self._populate_venv()
+        self._invoke_pip(["check"])
+
+    def download(
+        self,
+        specs: Optional[List[str]] = None,
+        requirement_files: Optional[List[str]] = None,
+        constraint_files: Optional[List[str]] = None,
+        pre: bool = False,
+        no_deps: bool = False,
+        no_mp_org: bool = False,
+        index_url: Optional[str] = None,
+        extra_index_urls: Optional[List[str]] = None,
+        no_index: bool = False,
+        find_links: Optional[str] = None,
+        dest: Optional[str] = None,
+        **_,
+    ):
+        args = ["download"]
+
+        if dest:
+            args += ["--dest", dest]
+
+        args += self._format_selection_args(
+            specs=specs,
+            requirement_files=requirement_files,
+            constraint_files=constraint_files,
+            pre=pre,
+            no_deps=no_deps,
+        )
 
         self._populate_venv()
-        state_before = self._get_venv_state()
-        self._invoke_pip(args)
-        state_after = self._get_venv_state()
+        self._invoke_pip_with_index_args(
+            args,
+            no_mp_org=no_mp_org,
+            index_url=index_url,
+            extra_index_urls=extra_index_urls,
+            no_index=no_index,
+            find_links=find_links,
+        )
 
-        removed_meta_dirs = {name for name in state_before if name not in state_after}
-        for meta_dir_name in removed_meta_dirs:
-            dist_name, version = parse_meta_dir_name(meta_dir_name)
-            self._adapter.remove_dist(dist_name)
+    def wheel(
+        self,
+        specs: Optional[List[str]] = None,
+        requirement_files: Optional[List[str]] = None,
+        constraint_files: Optional[List[str]] = None,
+        pre: bool = False,
+        no_deps: bool = False,
+        no_mp_org: bool = False,
+        index_url: Optional[str] = None,
+        extra_index_urls: Optional[List[str]] = None,
+        no_index: bool = False,
+        find_links: Optional[str] = None,
+        wheel_dir: Optional[str] = None,
+        **_,
+    ):
+        args = ["wheel"]
+
+        if wheel_dir:
+            args += ["--wheel-dir", wheel_dir]
+
+        args += self._format_selection_args(
+            specs=specs,
+            requirement_files=requirement_files,
+            constraint_files=constraint_files,
+            pre=pre,
+            no_deps=no_deps,
+        )
+
+        self._populate_venv()
+        self._invoke_pip_with_index_args(
+            args,
+            no_mp_org=no_mp_org,
+            index_url=index_url,
+            extra_index_urls=extra_index_urls,
+            no_index=no_index,
+            find_links=find_links,
+        )
 
     def close(self) -> None:
-        self._clear_venv()
+        # self._clear_venv()
         self._venv_lock.release()
+
+    def _format_selection_args(
+        self,
+        specs: Optional[List[str]],
+        requirement_files: Optional[List[str]],
+        constraint_files: Optional[List[str]],
+        pre: bool,
+        no_deps: bool,
+    ):
+        args = []
+
+        for path in requirement_files or []:
+            args += ["-r", path]
+        for path in constraint_files or []:
+            args += ["-c", path]
+
+        if no_deps:
+            args.append("--no-deps")
+        if pre:
+            args.append("--pre")
+
+        args += specs or []
+
+        return args
 
     def _upload_dist_by_meta_dir(self, meta_dir_name: str, target: str) -> None:
         record_path = os.path.join(self._get_venv_site_packages_path(), meta_dir_name, "RECORD")
@@ -236,23 +369,25 @@ class Session:
         # https://github.com/edwardgeorge/virtualenv-clone/blob/master/clonevirtualenv.py
         path = self._compute_venv_path()
         if not os.path.exists(path):
-            logger.info("Start preparing working environment ...")
+            logger.info("Start preparing working environment at %s ...", path)
             venv.main([path])
             subprocess.check_call(
                 [
-                    get_venv_executable(self._venv_dir),
+                    get_venv_executable(path),
                     "-I",
                     "-m",
                     "pip",
                     "--disable-pip-version-check",
-                    "--no-warn-script-location",
                     "install",
+                    "--no-warn-script-location",
                     "--upgrade",
                     f"pip{PRIVATE_PIP_SPEC}",
                     f"pip{PRIVATE_WHEEL_SPEC}",
                 ]
             )
-            logger.info("Done preparing working environment.\n")
+            logger.info("Done preparing working environment.")
+        else:
+            logger.debug("Using existing working environment at %s", path)
 
         lock = FileLock(os.path.join("pipkin.lock"))
         try:
@@ -262,8 +397,6 @@ class Session:
                 "Could not get exclusive access to the working environment. "
                 "Is there another pipkin instance running?"
             )
-
-        self._clear_venv()
 
         return lock, path
 
@@ -282,7 +415,7 @@ class Session:
                 assert os.path.isdir(full_path)
                 shutil.rmtree(full_path)
 
-    def _populate_venv(self, paths: List[str] = None, user: bool = False) -> None:
+    def _populate_venv(self, paths: Optional[List[str]] = None, user: bool = False) -> None:
         """paths and user should be used only with list and freeze commands"""
         assert not (paths and user)
         if user:
@@ -386,19 +519,34 @@ class Session:
 
         return result
 
-    def _invoke_pip_with_pipkin_proxy(
+    def _invoke_pip_with_index_args(
         self,
         pip_args: List[str],
-        prefer_mp_org: Optional[bool],
-        index_url: Optional[str],
+        no_mp_org: bool,
+        index_url: str,
         extra_index_urls: List[str],
+        no_index: bool,
+        find_links: Optional[str],
     ):
-        proxy = PipkinProxy(prefer_mp_org, index_url, extra_index_urls)
-        logger.info("Using PipkinProxy at %s", proxy.get_index_url())
-        try:
-            self._invoke_pip(pip_args + ["--index-url", proxy.get_index_url()])
-        finally:
-            proxy.shutdown()
+
+        if no_index:
+            assert find_links
+            self._invoke_pip(pip_args + ["--no-index", "--find-links", find_links])
+        else:
+            proxy = PipkinProxy(no_mp_org, index_url, extra_index_urls)
+            server_thread = threading.Thread(target=proxy.serve_forever)
+            server_thread.start()
+            logger.info("Using PipkinProxy at %s", proxy.get_index_url())
+
+            index_args = ["--index-url", proxy.get_index_url()]
+            if find_links:
+                index_args += ["--find-links", find_links]
+
+            try:
+                self._invoke_pip(pip_args + index_args)
+            finally:
+                proxy.shutdown()
+                server_thread.join(timeout=3)
 
     def _invoke_pip(self, args: List[str]) -> None:
         pip_cmd = [

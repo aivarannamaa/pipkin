@@ -55,11 +55,13 @@ def get_venv_executable(path: str) -> str:
         return os.path.join(path, "bin", "python3")
 
 
-def get_venv_site_packages_path(path: str) -> str:
-    return subprocess.check_output(
-        [get_venv_executable(path), "-c", "import site; print(site.getusersitepackages()[0])"],
+def get_venv_site_packages_path(venv_path: str) -> str:
+    result = subprocess.check_output(
+        [get_venv_executable(venv_path), "-c", "import site; print(site.getsitepackages()[0])"],
         text=True,
     ).strip()
+    assert result.startswith(venv_path)
+    return result
 
 
 def parse_meta_dir_name(name: str) -> Tuple[str, str]:

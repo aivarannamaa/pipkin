@@ -260,5 +260,8 @@ class DirAdapter(LocalMirrorAdapter):
         return "/"
 
 
-def create_adapter(port: Optional[str]) -> Adapter:
-    ...
+def create_adapter(port: Optional[str], mount: Optional[str], dir: Optional[str], **kw) -> Adapter:
+    if dir:
+        return DirAdapter(dir)
+    else:
+        raise NotImplementedError()

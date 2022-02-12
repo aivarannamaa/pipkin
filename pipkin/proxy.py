@@ -33,6 +33,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import BaseServer
 from textwrap import dedent
 from typing import List, Dict, Optional, Tuple
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from pipkin.common import UserError
@@ -41,6 +42,7 @@ MP_ORG_INDEX = "https://micropython.org/pi"
 PYPI_SIMPLE_INDEX = "https://pypi.org/simple"
 SERVER_ENCODING = "utf-8"
 
+DEFAULT_PORT = 26453
 
 try:
     from shlex import join as shlex_join
@@ -91,69 +93,80 @@ class BaseIndexDownloader:
 
         return self._file_urls_cache[dist_name]
 
-    def _download_file_urls(self, dist_name) -> Dict[str, str]:
+    def _download_file_urls(self, dist_name) -> Optional[Dict[str, str]]:
         raise NotImplementedError()
 
 
 class SimpleIndexDownloader(BaseIndexDownloader):
-    def _download_file_urls(self, dist_name) -> Dict[str, str]:
+    def _download_file_urls(self, dist_name) -> Optional[Dict[str, str]]:
         url = f"{self._index_url}/{dist_name}"
         logger.info("Downloading file urls from simple index %s", url)
 
-        with urlopen(url) as fp:
-            parser = SimpleUrlsParser()
-            parser.feed(fp.read().decode("utf-8"))
-            return parser.file_urls
+        try:
+            with urlopen(url) as fp:
+                parser = SimpleUrlsParser()
+                parser.feed(fp.read().decode("utf-8"))
+                return parser.file_urls
+        except HTTPError as e:
+            if e.code == 404:
+                return None
+            else:
+                raise e
 
 
 class JsonIndexDownloader(BaseIndexDownloader):
-    def _download_file_urls(self, dist_name) -> Dict[str, str]:
+    def _download_file_urls(self, dist_name) -> Optional[Dict[str, str]]:
         metadata_url = f"{self._index_url}/{dist_name}/json"
         logger.info("Downloading file urls from json index at %s", metadata_url)
 
         result = {}
-        with urlopen(metadata_url) as fp:
-            data = json.load(fp)
-            releases = data["releases"]
-            for ver in releases:
-                for file in releases[ver]:
-                    file_url = file["url"]
-                    if "filename" in file:
-                        file_name = file["filename"]
-                    else:
-                        # micropython.org/pi doesn't have it
-                        file_name = file_url.split("/")[-1]
-                        # may be missing micropython prefix
-                        if not file_name.startswith(dist_name):
-                            # Let's hope version part doesn't contain dashes
-                            _, suffix = file_name.split("-")
-                            file_name = dist_name + "-" + suffix
-                    result[file_name] = file_url
-
+        try:
+            with urlopen(metadata_url) as fp:
+                data = json.load(fp)
+                releases = data["releases"]
+                for ver in releases:
+                    for file in releases[ver]:
+                        file_url = file["url"]
+                        if "filename" in file:
+                            file_name = file["filename"]
+                        else:
+                            # micropython.org/pi doesn't have it
+                            file_name = file_url.split("/")[-1]
+                            # may be missing micropython prefix
+                            if not file_name.startswith(dist_name):
+                                # Let's hope version part doesn't contain dashes
+                                _, suffix = file_name.split("-")
+                                file_name = dist_name + "-" + suffix
+                        result[file_name] = file_url
+        except HTTPError as e:
+            if e.code == 404:
+                return None
+            else:
+                raise e
         return result
 
 
 class PipkinProxy(HTTPServer):
     def __init__(
         self,
-        prefer_mp_org: Optional[bool],
+        no_mp_org: bool,
         index_url: Optional[str],
         extra_index_urls: List[str],
     ):
         self._downloaders = []
         self._downloaders_by_dist_name = {}
-        if prefer_mp_org:
+        if not no_mp_org:
             self._downloaders.append(JsonIndexDownloader(MP_ORG_INDEX))
         self._downloaders.append(SimpleIndexDownloader(index_url or PYPI_SIMPLE_INDEX))
         for url in extra_index_urls:
             self._downloaders.append(SimpleIndexDownloader(url))
-        super().__init__(("", 0), PipkinProxyHandler)
+        super().__init__(("", DEFAULT_PORT), PipkinProxyHandler)
 
     def get_downloader_for_dist(self, dist_name: str) -> Optional[BaseIndexDownloader]:
         if dist_name not in self._downloaders_by_dist_name:
             for downloader in self._downloaders:
                 file_urls = downloader.get_file_urls(dist_name)
-                if file_urls:
+                if file_urls is not None:
                     self._downloaders_by_dist_name[dist_name] = downloader
                     break
             else:
@@ -162,7 +175,7 @@ class PipkinProxy(HTTPServer):
         return self._downloaders_by_dist_name[dist_name]
 
     def get_index_url(self) -> str:
-        return f"http://{self.server_name}:{self.server_port}"
+        return f"http://127.0.0.1:{self.server_port}"
 
 
 class PipkinProxyHandler(BaseHTTPRequestHandler):
@@ -185,12 +198,14 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         logger.debug("Serving index page for %s", dist_name)
         downloader = self.proxy.get_downloader_for_dist(dist_name)
         if downloader is None:
-            raise UserError(f"Distribution '{dist_name}' can't be found.")
+            self.send_response(404)
+            self.end_headers()
+            return
 
         # TODO: check https://discuss.python.org/t/community-testing-of-packaging-tools-against-non-warehouse-indexes/13442
 
         file_urls = downloader.get_file_urls(dist_name)
-        logger.debug("File urls: %r", file_urls)
+        # logger.debug("File urls: %r", file_urls)
         self.send_response(200)
         self.send_header("Content-type", f"text/html; charset={SERVER_ENCODING}")
         self.end_headers()
