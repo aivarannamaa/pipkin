@@ -12,10 +12,6 @@ logger = logging.getLogger(__name__)
 __version__ = "0.2b1"
 
 
-class UserError(RuntimeError):
-    pass
-
-
 def error(msg):
     msg = "ERROR: " + msg
     if sys.stderr.isatty():
@@ -35,6 +31,35 @@ def main(raw_args: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Tool for managing MicroPython and CircuitPython packages"
     )
+
+    parser.add_argument(
+        "--version",
+        help="Show program version and exit",
+        action="version",
+        version=__version__,
+    )
+
+    parser.add_argument(
+        "-p",
+        "--port",
+        help="Serial port of the target device",
+        nargs="?",
+    )
+
+    parser.add_argument(
+        "-m",
+        "--mount",
+        help="Mount point (volume, disk, drive) of target device's filesystem",
+        nargs="?",
+    )
+
+    parser.add_argument(
+        "-d",
+        "--dir",
+        help="Mount point (volume, disk, drive) of target device's filesystem",
+        nargs="?",
+    )
+
     subparsers = parser.add_subparsers(
         dest="command",
         title="commands",
@@ -47,12 +72,15 @@ def main(raw_args: Optional[List[str]] = None) -> int:
         help="Install a package",
         description=textwrap.dedent(
             """
-        Meant for installing both upip and pip compatible distribution packages from
-        PyPI and micropython.org/pi to a local directory, USB volume or directly to
-        MicroPython filesystem over serial connection (requires rshell).
+        Installs upip or pip compatible distribution packages onto a MicroPython/CircuitPython device 
+        or into a local directory.
     """
         ).strip(),
     )
+
+    import pip
+
+    pip.main()
 
     install_parser.add_argument(
         "specs",
@@ -68,14 +96,6 @@ def main(raw_args: Optional[List[str]] = None) -> int:
         dest="requirement_files",
         metavar="REQUIREMENT_FILE",
         default=[],
-    )
-    install_parser.add_argument(
-        "-p",
-        "--port",
-        "--prefix",
-        help="Serial port of the device or prefix of the  "
-        "(specify if you want pipkin to upload the result to the device)",
-        nargs="?",
     )
     install_parser.add_argument(
         "-t",
@@ -108,12 +128,6 @@ def main(raw_args: Optional[List[str]] = None) -> int:
             action="store_true",
         )
 
-    parser.add_argument(
-        "--version",
-        help="Show program version and exit",
-        action="version",
-        version=__version__,
-    )
     args = parser.parse_args(args=raw_args)
 
     if args.quiet and args.verbose:

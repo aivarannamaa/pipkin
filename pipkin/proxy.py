@@ -35,7 +35,7 @@ from textwrap import dedent
 from typing import List, Dict, Optional, Tuple
 from urllib.request import urlopen
 
-from pipkin import UserError
+from pipkin.common import UserError
 
 MP_ORG_INDEX = "https://micropython.org/pi"
 PYPI_SIMPLE_INDEX = "https://pypi.org/simple"

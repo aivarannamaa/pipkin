@@ -57,6 +57,11 @@ steps:
 """
 
 
+"""
 from pipkin import main
 
 sys.exit(main(sys.argv[1:]))
+"""
+from pipkin import parser
+
+parser.parse_arguments()

@@ -11,8 +11,8 @@ from typing import Optional, List, Dict, Tuple
 import filelock
 from filelock import FileLock, BaseFileLock
 
-from pipkin import UserError
 from pipkin.adapters import Adapter
+from pipkin.common import UserError
 from pipkin.proxy import PipkinProxy
 from pipkin.util import (
     get_base_executable,
