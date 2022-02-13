@@ -4,7 +4,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import threading
 import venv
 from logging import getLogger
 from typing import Optional, List, Dict, Tuple
@@ -14,7 +13,7 @@ from filelock import FileLock, BaseFileLock
 
 from pipkin.adapters import Adapter
 from pipkin.common import UserError
-from pipkin.proxy import PipkinProxy
+from pipkin.proxy import start_proxy
 from pipkin.util import (
     get_base_executable,
     get_user_cache_dir,
@@ -300,6 +299,15 @@ class Session:
             find_links=find_links,
         )
 
+    def cache(self, cache_command: str, **_) -> None:
+        self._invoke_pip(["cache", cache_command])
+
+        if cache_command == "purge":
+            self.close()
+            for name in os.listdir(self._get_workspaces_dir()):
+                full_path = os.path.join(self._get_workspaces_dir(), name)
+                shutil.rmtree(full_path)
+
     def close(self) -> None:
         # self._clear_venv()
         self._venv_lock.release()
@@ -382,14 +390,14 @@ class Session:
                     "--no-warn-script-location",
                     "--upgrade",
                     f"pip{PRIVATE_PIP_SPEC}",
-                    f"pip{PRIVATE_WHEEL_SPEC}",
+                    f"wheel{PRIVATE_WHEEL_SPEC}",
                 ]
             )
             logger.info("Done preparing working environment.")
         else:
             logger.debug("Using existing working environment at %s", path)
 
-        lock = FileLock(os.path.join("pipkin.lock"))
+        lock = FileLock(os.path.join(path, "pipkin.lock"))
         try:
             lock.acquire(timeout=0)
         except filelock.Timeout:
@@ -472,7 +480,17 @@ class Session:
             exe = sys.executable
 
         venv_name = hashlib.md5(str((exe, sys.version_info[0:2])).encode("utf-8")).hexdigest()
-        return os.path.join(get_user_cache_dir(), "pipkin", venv_name)
+        return os.path.join(self._get_workspaces_dir(), venv_name)
+
+    def _get_workspaces_dir(self) -> str:
+        return os.path.join(self._get_pipkin_cache_dir(), "workspaces")
+
+    def _get_pipkin_cache_dir(self) -> str:
+        result = os.path.join(get_user_cache_dir(), "pipkin")
+        if sys.platform == "win32":
+            # Windows doesn't have separate user cache dir
+            result = os.path.join(result, "cache")
+        return result
 
     def _is_initial_venv_item(self, name: str) -> bool:
         return (
@@ -533,9 +551,7 @@ class Session:
             assert find_links
             self._invoke_pip(pip_args + ["--no-index", "--find-links", find_links])
         else:
-            proxy = PipkinProxy(no_mp_org, index_url, extra_index_urls)
-            server_thread = threading.Thread(target=proxy.serve_forever)
-            server_thread.start()
+            proxy = start_proxy(no_mp_org, index_url, extra_index_urls)
             logger.info("Using PipkinProxy at %s", proxy.get_index_url())
 
             index_args = ["--index-url", proxy.get_index_url()]
@@ -546,7 +562,6 @@ class Session:
                 self._invoke_pip(pip_args + index_args)
             finally:
                 proxy.shutdown()
-                server_thread.join(timeout=3)
 
     def _invoke_pip(self, args: List[str]) -> None:
         pip_cmd = [
@@ -555,6 +570,12 @@ class Session:
             "-m",
             "pip",
             "--disable-pip-version-check",
+            "--trusted-host",
+            "127.0.0.1",
         ] + args
         logger.debug("Calling pip: %s", " ".join(shlex.quote(arg) for arg in pip_cmd))
-        subprocess.check_call(pip_cmd)
+
+        env = {key: os.environ[key] for key in os.environ if not key.startswith("PIP_")}
+        env["PIP_CACHE_DIR"] = self._get_pipkin_cache_dir()
+
+        subprocess.check_call(pip_cmd, env=env)

@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from logging import getLogger
 from typing import Optional, List, Dict, Tuple
 
+from pipkin.common import UserError
 from pipkin.util import parse_meta_dir_name
 
 META_ENCODING = "utf-8"
@@ -246,12 +247,25 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
 
 
 class MountAdapter(LocalMirrorAdapter):
+    def __init__(self, mount_point: str):
+        super().__init__(mount_point)
+        if not os.path.exists(mount_point):
+            raise UserError(f"Can't find mount point {mount_point}")
+        if os.path.isfile(mount_point):
+            raise UserError(f"Mount point {mount_point} can't be a file")
+
     def get_sys_path(self) -> List[str]:
         # TODO: consider /flash/lib and so on
         return ["/lib"]
 
 
 class DirAdapter(LocalMirrorAdapter):
+    def __init__(self, base_path: str):
+        super().__init__(base_path)
+        if not os.path.isdir(base_path):
+            assert not os.path.exists(base_path)
+            os.makedirs(base_path, mode=0o755)
+
     def get_sys_path(self) -> List[str]:
         # This means, list command without --path will consider this directory
         return ["/"]

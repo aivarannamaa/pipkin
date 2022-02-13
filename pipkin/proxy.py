@@ -23,11 +23,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import copy
+import errno
 import io
 import json
 import logging
 import shlex
 import tarfile
+import threading
 from html.parser import HTMLParser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import BaseServer
@@ -42,7 +44,8 @@ MP_ORG_INDEX = "https://micropython.org/pi"
 PYPI_SIMPLE_INDEX = "https://pypi.org/simple"
 SERVER_ENCODING = "utf-8"
 
-DEFAULT_PORT = 26453
+# For efficient caching it's better if the proxy always runs at the same port
+PREFERRED_PORT = 36628
 
 try:
     from shlex import join as shlex_join
@@ -148,10 +151,7 @@ class JsonIndexDownloader(BaseIndexDownloader):
 
 class PipkinProxy(HTTPServer):
     def __init__(
-        self,
-        no_mp_org: bool,
-        index_url: Optional[str],
-        extra_index_urls: List[str],
+        self, no_mp_org: bool, index_url: Optional[str], extra_index_urls: List[str], port: int
     ):
         self._downloaders = []
         self._downloaders_by_dist_name = {}
@@ -160,7 +160,7 @@ class PipkinProxy(HTTPServer):
         self._downloaders.append(SimpleIndexDownloader(index_url or PYPI_SIMPLE_INDEX))
         for url in extra_index_urls:
             self._downloaders.append(SimpleIndexDownloader(url))
-        super().__init__(("", DEFAULT_PORT), PipkinProxyHandler)
+        super().__init__(("", port), PipkinProxyHandler)
 
     def get_downloader_for_dist(self, dist_name: str) -> Optional[BaseIndexDownloader]:
         if dist_name not in self._downloaders_by_dist_name:
@@ -183,7 +183,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         logger.debug("Creating new handler")
         assert isinstance(server, PipkinProxy)
         self.proxy: PipkinProxy = server
-        super(PipkinProxyHandler, self).__init__(request, client_address, server)
+        super().__init__(request, client_address, server)
 
     def do_GET(self) -> None:
         path = self.path.strip("/")
@@ -208,6 +208,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         # logger.debug("File urls: %r", file_urls)
         self.send_response(200)
         self.send_header("Content-type", f"text/html; charset={SERVER_ENCODING}")
+        self.send_header("Cache-Control", "max-age=600, public")
         self.end_headers()
         self.wfile.write("<!DOCTYPE html><html><body>\n".encode(SERVER_ENCODING))
         for file_name in file_urls:
@@ -224,6 +225,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Cache-Control", "max-age=365000000, immutable, public")
         self.end_headers()
 
         block_size = 4096
@@ -417,3 +419,22 @@ tag_date = 0
 
         src += ")\n"
         return src
+
+
+def start_proxy(
+    no_mp_org: bool,
+    index_url: Optional[str],
+    extra_index_urls: List[str],
+) -> PipkinProxy:
+    try:
+        proxy = PipkinProxy(no_mp_org, index_url, extra_index_urls, PREFERRED_PORT)
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            proxy = PipkinProxy(no_mp_org, index_url, extra_index_urls, 0)
+        else:
+            raise e
+
+    server_thread = threading.Thread(target=proxy.serve_forever)
+    server_thread.start()
+
+    return proxy
