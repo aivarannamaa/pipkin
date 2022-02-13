@@ -121,9 +121,7 @@ class BaseAdapter(Adapter, ABC):
 
         else:
             for entry in self.get_sys_path():
-                if entry == "":
-                    continue
-                else:
+                if entry.startswith("/"):
                     result = self.check_remove_dist_from_path(dist_name, entry)
                     could_remove = could_remove or result
                     if result:
@@ -145,15 +143,18 @@ class BaseAdapter(Adapter, ABC):
         record_bytes = self.read_file(self.join_path(containing_dir, meta_dir_name, "RECORD"))
         record_lines = record_bytes.decode(META_ENCODING).splitlines()
 
-        dirs = set()
+        package_dirs = set()
         for line in record_lines:
             rel_path, _, _ = line.split(",")
             abs_path = self.join_path(containing_dir, rel_path)
+            logger.debug("Removing file %s", abs_path)
             self.remove_file(abs_path)
             abs_dir, _ = self.split_dir_and_basename(abs_path)
-            dirs.add(abs_dir)
+            while len(abs_dir) > len(containing_dir):
+                package_dirs.add(abs_dir)
+                abs_dir, _ = self.split_dir_and_basename(abs_dir)
 
-        for abs_dir in dirs:
+        for abs_dir in sorted(package_dirs, reverse=True):
             self.remove_dir_if_empty(abs_dir)
 
     def join_path(self, *parts: str) -> str:
@@ -230,7 +231,8 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
     def remove_dir_if_empty(self, path: str) -> None:
         local_path = self.convert_to_local_path(path)
         assert os.path.isdir(local_path)
-        if not os.listdir(local_path):
+        content = os.listdir(local_path)
+        if not content:
             os.rmdir(local_path)
 
     def create_dir_if_doesnt_exist(self, path: str) -> None:

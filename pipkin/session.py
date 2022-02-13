@@ -34,6 +34,7 @@ class Session:
     def __init__(self, adapter: Adapter):
         self._adapter = adapter
         self._venv_lock, self._venv_dir = self._prepare_venv()
+        self._quiet = False
 
     def install(
         self,
@@ -94,6 +95,9 @@ class Session:
             if name in state_before and state_after[name] != state_before[name]
         }
 
+        if new_meta_dirs or changed_meta_dirs:
+            self._report_progress("Starting to apply changes to the target.")
+
         if target:
             effective_target = target
         elif user:
@@ -102,6 +106,7 @@ class Session:
             effective_target = self._adapter.get_default_target()
 
         for meta_dir in changed_meta_dirs:
+            self._report_progress(f"Removing old version of {parse_meta_dir_name(meta_dir)[0]}")
             # if target is specified by --target or --user, then don't touch anything
             # besides corresponding directory, regardless of the sys.path and possible hiding
             dist_name, version = parse_meta_dir_name(meta_dir)
@@ -122,6 +127,9 @@ class Session:
         self._adapter.create_dir_if_doesnt_exist(effective_target)
         for meta_dir in new_meta_dirs | changed_meta_dirs:
             self._upload_dist_by_meta_dir(meta_dir, effective_target)
+
+        if new_meta_dirs or changed_meta_dirs:
+            self._report_progress("All changes applied.")
 
     def uninstall(
         self,
@@ -145,9 +153,16 @@ class Session:
         state_after = self._get_venv_state()
 
         removed_meta_dirs = {name for name in state_before if name not in state_after}
+        if removed_meta_dirs:
+            self._report_progress("Starting to apply changes to the target.")
+
         for meta_dir_name in removed_meta_dirs:
+            self._report_progress(f"Removing {parse_meta_dir_name(meta_dir_name)[0]}")
             dist_name, version = parse_meta_dir_name(meta_dir_name)
             self._adapter.remove_dist(dist_name)
+
+        if removed_meta_dirs:
+            self._report_progress("All changes applied.")
 
     def list(
         self,
@@ -337,6 +352,7 @@ class Session:
         return args
 
     def _upload_dist_by_meta_dir(self, meta_dir_name: str, target: str) -> None:
+        self._report_progress(f"Copying {parse_meta_dir_name(meta_dir_name)[0]}", end="")
         record_path = os.path.join(self._get_venv_site_packages_path(), meta_dir_name, "RECORD")
         assert os.path.exists(record_path)
 
@@ -348,7 +364,7 @@ class Session:
         for line in record_lines:
             rel_path = line.split(",")[0]
 
-            # don't consider files installed to eg. bin-directory
+            # don't consider files installed to e.g. bin-directory
             if rel_path.startswith(".."):
                 continue
 
@@ -370,9 +386,13 @@ class Session:
             # TODO: simplify METADATA and RECORD
 
             self._adapter.write_file(full_device_path, content)
+            self._report_progress(".", end="")
+
+        # add linebreak
+        self._report_progress("")
 
     def _prepare_venv(self) -> Tuple[BaseFileLock, str]:
-        # 1. create sample venv (if doesn't exist yet)
+        # 1. create sample venv (if it doesn't exist yet)
         # 2. clone the venv for this session (Too slow in Windows ???)
         # https://github.com/edwardgeorge/virtualenv-clone/blob/master/clonevirtualenv.py
         path = self._compute_venv_path()
@@ -579,3 +599,8 @@ class Session:
         env["PIP_CACHE_DIR"] = self._get_pipkin_cache_dir()
 
         subprocess.check_call(pip_cmd, env=env)
+
+    def _report_progress(self, msg: str, end="\n") -> None:
+        if not self._quiet:
+            print(msg, end=end)
+            sys.stdout.flush()
