@@ -31,11 +31,6 @@ INITIAL_VENV_FILES = ["easy_install.py"]
 
 
 class Session:
-    """
-    Session allows performing several commands on a target with a single device => venv
-    synchronization.
-    """
-
     def __init__(self, adapter: Adapter):
         self._adapter = adapter
         self._venv_lock, self._venv_dir = self._prepare_venv()
@@ -60,7 +55,7 @@ class Session:
         **_,
     ):
 
-        args = ["install"]
+        args = ["install", "--no-compile"]
 
         if upgrade:
             args.append("--upgrade")
@@ -185,8 +180,7 @@ class Session:
         if format:
             args += ["--format", format]
 
-        for exclude in excludes or []:
-            args += ["--exclude", exclude]
+        args += self._format_exclusion_args(excludes)
 
         self._populate_venv(paths=paths, user=user)
 
@@ -213,8 +207,7 @@ class Session:
 
         args = ["freeze"]
 
-        for exclude in excludes or []:
-            args += ["--exclude", exclude]
+        args += self._format_exclusion_args(excludes)
 
         self._populate_venv(paths=paths, user=user)
         self._invoke_pip(args)
@@ -311,6 +304,13 @@ class Session:
     def close(self) -> None:
         # self._clear_venv()
         self._venv_lock.release()
+
+    def _format_exclusion_args(self, excludes: Optional[List[str]]) -> List[str]:
+        args = []
+        for exclude in (excludes or []) + ["pip", "pkg_resources", "setuptools", "wheel"]:
+            args += ["--exclude", exclude]
+
+        return args
 
     def _format_selection_args(
         self,

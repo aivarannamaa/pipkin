@@ -266,9 +266,14 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         egg_info_path = None
 
         for info in in_tar:
-            logger.debug("Processing %r", info)
-            with in_tar.extractfile(info) as f:
-                content = f.read()
+            logger.debug("Processing %r (name:%r, isfile:%r)", info, info.name, info.isfile())
+            out_info = copy.copy(info)
+
+            if info.isdir():
+                content = None
+            else:
+                with in_tar.extractfile(info) as f:
+                    content = f.read()
 
             if "/" in info.name:
                 wrapper_dir, rel_name = info.name.split("/", maxsplit=1)
@@ -280,8 +285,6 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
 
             rel_name = rel_name.strip("/")
             rel_segments = rel_name.split("/")
-
-            out_info = copy.copy(info)
 
             # collect information about the original tar
             if rel_name == "setup.py":
@@ -300,9 +303,9 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
                     module_name = rel_name[: -len(".py")]
                     py_modules.append(module_name)
                 else:
-                    assert info.isdir()
-                    # Assuming all toplevel directories represent packages.
-                    packages.append(rel_name)
+                    if info.isdir():
+                        # Assuming all toplevel directories represent packages.
+                        packages.append(rel_name)
             else:
                 # Assuming an item inside a subdirectory.
                 # If it's a py, it will be included together with containing package,
@@ -311,7 +314,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
                     # directories may not have their own entry
                     packages.append(rel_segments[0])
 
-            # all existing files need to be added without changing
+            # all existing files and dirs need to be added without changing
             out_tar.addfile(out_info, io.BytesIO(content))
 
         assert wrapper_dir

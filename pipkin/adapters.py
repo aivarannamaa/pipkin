@@ -1,4 +1,5 @@
 import os.path
+import re
 from abc import ABC, abstractmethod
 from logging import getLogger
 from typing import Optional, List, Dict, Tuple
@@ -90,7 +91,7 @@ class BaseAdapter(Adapter, ABC):
 
     def list_dists(self, paths: List[str] = None) -> Dict[str, Tuple[str, str]]:
         if not paths:
-            paths = [entry for entry in self.get_sys_path() if entry != ""]
+            paths = [entry for entry in self.get_sys_path() if entry.startswith("/")]
 
         result = {}
         for path in paths:
@@ -211,9 +212,15 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
         local_path = self.convert_to_local_path(path)
         assert not os.path.isdir(local_path)
 
+        block_size = 4 * 1024
         with open(local_path, "wb") as fp:
-            # TODO: write in blocks and sync
-            fp.write(content)
+            while content:
+                block = content[:block_size]
+                content = content[block_size:]
+                bytes_written = fp.write(block)
+                fp.flush()
+                os.fsync(fp)
+                assert bytes_written == len(block)
 
     def remove_file(self, path: str) -> None:
         local_path = self.convert_to_local_path(path)
@@ -230,7 +237,7 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
         local_path = self.convert_to_local_path(path)
         if not os.path.isdir(local_path):
             assert not os.path.exists(local_path)
-            os.mkdir(local_path, 0o755)
+            os.makedirs(local_path, 0o755)
 
     def convert_to_local_path(self, device_path: str) -> str:
         assert device_path.startswith("/")
@@ -238,25 +245,50 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
 
     def list_meta_dir_names(self, path: str, dist_name: Optional[str] = None) -> List[str]:
         local_path = self.convert_to_local_path(path)
-        return [
-            name
-            for name in os.listdir(local_path)
-            if name.endswith(".dist-info")
-            and (dist_name is None or name.startswith(dist_name + "-"))
-        ]
+        try:
+            return [
+                name
+                for name in os.listdir(local_path)
+                if name.endswith(".dist-info")
+                and (dist_name is None or name.startswith(dist_name + "-"))
+            ]
+        except FileNotFoundError:
+            # skipping non-existing dirs
+            return []
 
 
 class MountAdapter(LocalMirrorAdapter):
-    def __init__(self, mount_point: str):
-        super().__init__(mount_point)
-        if not os.path.exists(mount_point):
-            raise UserError(f"Can't find mount point {mount_point}")
-        if os.path.isfile(mount_point):
-            raise UserError(f"Mount point {mount_point} can't be a file")
+    def __init__(self, base_path: str):
+        super().__init__(base_path)
+        if not os.path.exists(base_path):
+            raise UserError(f"Can't find mount point {base_path}")
+        if os.path.isfile(base_path):
+            raise UserError(f"Mount point {base_path} can't be a file")
+
+        self._circuitpython_version = self._infer_cp_version()
 
     def get_sys_path(self) -> List[str]:
-        # TODO: consider /flash/lib and so on
-        return ["/lib"]
+        if os.path.isdir(os.path.join(self.base_path, "lib")) or self.is_circuitpython():
+            return ["", "/", ".frozen", "/lib"]
+        elif os.path.isdir(os.path.join(self.base_path, "flash")):
+            return ["", "/flash", "/flash/lib"]
+        else:
+            return ["", "/", ".frozen", "/lib"]
+
+    def is_circuitpython(self) -> bool:
+        # TODO: better look into the file as well
+        return os.path.isfile(os.path.join(self.base_path, "boot_out.txt"))
+
+    def _infer_cp_version(self) -> Optional[str]:
+        boot_out_path = os.path.join(self.base_path, "boot_out.txt")
+        if os.path.exists(boot_out_path):
+            with open(boot_out_path) as fp:
+                firmware_info = fp.readline().strip()
+            match = re.match(r".*?CircuitPython (\d+\.\d+)\..+?", firmware_info)
+            if match:
+                return match.group(1)
+
+        return None
 
 
 class DirAdapter(LocalMirrorAdapter):
@@ -277,5 +309,7 @@ class DirAdapter(LocalMirrorAdapter):
 def create_adapter(port: Optional[str], mount: Optional[str], dir: Optional[str], **kw) -> Adapter:
     if dir:
         return DirAdapter(dir)
+    elif mount:
+        return MountAdapter(mount)
     else:
         raise NotImplementedError()
