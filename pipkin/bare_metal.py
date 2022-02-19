@@ -33,8 +33,8 @@ RAW_PASTE_COMMAND = b"\x05A\x01"
 RAW_PASTE_CONFIRMATION = b"R\x01"
 RAW_PASTE_CONTINUE = b"\x01"
 
-MGMT_VALUE_START = b"<thonny>"
-MGMT_VALUE_END = b"</thonny>"
+MGMT_VALUE_START = b"<pipkin>"
+MGMT_VALUE_END = b"</pipkin>"
 
 # How many seconds to wait for something that should appear quickly.
 # In other words -- how long to wait with reporting a protocol error
@@ -152,7 +152,45 @@ class BareMetalAdapter(BaseAdapter, ABC):
         return None
 
     def read_file(self, path: str) -> bytes:
-        ...
+
+        hex_mode = self._should_hexlify(path)
+
+        self._execute_without_output("__pipkin_fp = __pipkin_helper.builtins.open(%r, 'rb')" % path)
+        if hex_mode:
+            self._execute_without_output("from binascii import hexlify as __temp_hexlify")
+
+        block_size = 1024
+        num_bytes_read = 0
+        blocks = []
+        while True:
+            if hex_mode:
+                block = binascii.unhexlify(
+                    self._evaluate("__temp_hexlify(__pipkin_fp.read(%s))" % block_size)
+                )
+            else:
+                block = self._evaluate("__pipkin_fp.read(%s)" % block_size)
+
+            if block:
+                blocks.append(block)
+                num_bytes_read += len(block)
+
+            if len(block) < block_size:
+                break
+
+        self._execute_without_output(
+            dedent(
+                """
+            __pipkin_fp.close()
+            del __pipkin_fp
+            try:
+                del __temp_hexlify
+            except:
+                pass
+            """
+            )
+        )
+
+        return b"".join(blocks)
 
     def remove_file(self, path: str) -> None:
         ...
@@ -582,17 +620,16 @@ class SerialPortAdapter(BareMetalAdapter):
             dedent(
                 """
             try:
-                __thonny_path = '{path}'
-                __thonny_written = 0
-                __thonny_fp = __pipkin_helper.builtins.open(__thonny_path, 'wb')
+                __pipkin_path = '{path}'
+                __pipkin_written = 0
+                __pipkin_fp = __pipkin_helper.builtins.open(__pipkin_path, 'wb')
             except __pipkin_helper.builtins.Exception as e:
                 __pipkin_helper.builtins.print(__pipkin_helper.builtins.str(e))
             """
             ).format(path=target_path),
         )
 
-        canonic_out = (out + err).replace("-", "").lower()
-        if "readonly" in canonic_out or "errno 30" in canonic_out:
+        if self._contains_read_only_error(out + err):
             raise ReadOnlyFilesystemError()
         elif out + err:
             raise OSError(
@@ -605,11 +642,11 @@ class SerialPortAdapter(BareMetalAdapter):
             self._execute_without_output(
                 dedent(
                     """
-                from binascii import unhexlify as __thonny_unhex
+                from binascii import unhexlify as __pipkin_unhex
                 def __W(x):
-                    global __thonny_written
-                    __thonny_written += __thonny_fp.write(__thonny_unhex(x))
-                    __thonny_fp.flush()
+                    global __pipkin_written
+                    __pipkin_written += __pipkin_fp.write(__pipkin_unhex(x))
+                    __pipkin_fp.flush()
                     if __pipkin_helper.builtins.hasattr(__pipkin_helper.os, "sync"):
                         __pipkin_helper.os.sync()
             """
@@ -620,9 +657,9 @@ class SerialPortAdapter(BareMetalAdapter):
                 dedent(
                     """
                 def __W(x):
-                    global __thonny_written
-                    __thonny_written += __thonny_fp.write(x)
-                    __thonny_fp.flush()
+                    global __pipkin_written
+                    __pipkin_written += __pipkin_fp.write(x)
+                    __pipkin_fp.flush()
                     if __pipkin_helper.builtins.hasattr(__pipkin_helper.os, "sync"):
                         __pipkin_helper.os.sync()
             """
@@ -650,7 +687,7 @@ class SerialPortAdapter(BareMetalAdapter):
             bytes_sent += len(block)
             to_be_written = to_be_written[block_size:]
 
-        bytes_received = self._evaluate("__thonny_written")
+        bytes_received = self._evaluate("__pipkin_written")
 
         if bytes_received != bytes_sent:
             raise OSError("Expected %d written bytes but wrote %d" % (bytes_sent, bytes_received))
@@ -661,17 +698,21 @@ class SerialPortAdapter(BareMetalAdapter):
                 """
                 try:
                     del __W
-                    del __thonny_written
-                    del __thonny_path
-                    __thonny_fp.close()
-                    del __thonny_fp
-                    del __thonny_result
-                    del __thonny_unhex
+                    del __pipkin_written
+                    del __pipkin_path
+                    __pipkin_fp.close()
+                    del __pipkin_fp
+                    del __pipkin_result
+                    del __pipkin_unhex
                 except:
                     pass
             """
             )
         )
+
+    def _contains_read_only_error(self, s: str) -> bool:
+        canonic_out = s.replace("-", "").lower()
+        return "readonly" in canonic_out or "errno 30" in canonic_out
 
 
 class WebReplAdapter(BareMetalAdapter):
