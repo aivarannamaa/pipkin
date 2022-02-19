@@ -68,3 +68,11 @@ def parse_meta_dir_name(name: str) -> Tuple[str, str]:
     assert name.endswith(".dist-info")
     name, version = name[: -len(".dist-info")].split("-")
     return name, version
+
+
+def starts_with_continuation_byte(data: bytes) -> bool:
+    return data and is_continuation_byte(data[0])
+
+
+def is_continuation_byte(byte: int) -> bool:
+    return (byte & 0b11000000) == 0b10000000

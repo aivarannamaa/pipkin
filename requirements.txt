@@ -1,3 +1,4 @@
 pip
 setuptools
 filelock>=3.0.*
+pyserial>=3.4
