@@ -1,10 +1,11 @@
 import subprocess
+import traceback
 from typing import Optional, List
 import sys
 import logging
 
 from pipkin.adapters import create_adapter
-from pipkin.common import UserError
+from pipkin.common import UserError, ManagementError
 from pipkin.session import Session
 
 logger = logging.getLogger("pipkin")
@@ -52,6 +53,11 @@ def main(raw_args: Optional[List[str]] = None) -> int:
             session.close()
     except KeyboardInterrupt:
         return 1
+    except ManagementError as e:
+        logger.error(traceback.format_exc())
+        logger.error("SCRIPT: %r", e.script)
+        logger.error("OUT=%r", e.out)
+        logger.error("ERR=%r", e.err)
     except UserError as e:
         return error(str(e))
     except subprocess.CalledProcessError:

@@ -60,12 +60,11 @@ class Adapter(ABC):
     def split_dir_and_basename(self, path: str) -> Tuple[str, str]:
         ...
 
-    @abstractmethod
-    def create_dir_if_doesnt_exist(self, path: str) -> None:
-        ...
-
 
 class BaseAdapter(Adapter, ABC):
+    def __init__(self):
+        self._ensured_directories = set()
+
     @abstractmethod
     def get_sys_path(self) -> List[str]:
         ...
@@ -84,7 +83,13 @@ class BaseAdapter(Adapter, ABC):
         ...
 
     def get_default_target(self) -> str:
-        for entry in self.get_sys_path():
+        sys_path = self.get_sys_path()
+        # M5-Flow 2.0.0 has both /lib and /flash/libs
+        for candidate in ["/flash/lib", "/flash/libs", "/lib"]:
+            if candidate in sys_path:
+                return candidate
+
+        for entry in sys_path:
             if "lib" in entry:
                 return entry
         raise AssertionError("Could not determine default target")
@@ -163,13 +168,43 @@ class BaseAdapter(Adapter, ABC):
 
     def split_dir_and_basename(self, path: str) -> Tuple[str, str]:
         dir_name, basename = path.rsplit("/", maxsplit=1)
-        return dir_name, basename
+        return dir_name or None, basename or None
+
+    def write_file(self, path: str, content: bytes) -> None:
+        parent, _ = self.split_dir_and_basename(path)
+        self.ensure_dir_exists(parent)
+        self.write_file_in_existing_dir(path, content)
+
+    def ensure_dir_exists(self, path: str) -> None:
+        if (
+            path in self._ensured_directories
+            or path == "/"
+            or path.endswith(":")
+            or path.endswith(":\\")
+        ):
+            return
+        else:
+            parent, _ = self.split_dir_and_basename(path)
+            if parent:
+                self.ensure_dir_exists(parent)
+            self.mkdir_in_existing_parent_exists_ok(path)
+            self._ensured_directories.add(path)
+
+    @abstractmethod
+    def write_file_in_existing_dir(self, path: str, content: bytes) -> None:
+        ...
+
+    @abstractmethod
+    def mkdir_in_existing_parent_exists_ok(self, path: str) -> None:
+        ...
 
 
 class InterpreterAdapter(BaseAdapter, ABC):
     """Base class for adapters, which communicate with an interpreter"""
 
-    ...
+    def __init__(self, executable: str):
+        super(InterpreterAdapter, self).__init__()
+        self._executable = executable
 
 
 class ExecutableAdapter(InterpreterAdapter, ABC):
@@ -186,6 +221,7 @@ class SshExecutableAdapter(ExecutableAdapter):
 
 class LocalMirrorAdapter(BaseAdapter, ABC):
     def __init__(self, base_path: str):
+        super(LocalMirrorAdapter, self).__init__()
         self.base_path = base_path
 
     def get_user_packages_path(self) -> Optional[str]:
@@ -197,7 +233,7 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
         with open(local_path, "rb") as fp:
             return fp.read()
 
-    def write_file(self, path: str, content: bytes) -> None:
+    def write_file_in_existing_dir(self, path: str, content: bytes) -> None:
         local_path = self.convert_to_local_path(path)
         assert not os.path.isdir(local_path)
 
@@ -223,11 +259,11 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
         if not content:
             os.rmdir(local_path)
 
-    def create_dir_if_doesnt_exist(self, path: str) -> None:
+    def mkdir_in_existing_parent_exists_ok(self, path: str) -> None:
         local_path = self.convert_to_local_path(path)
         if not os.path.isdir(local_path):
             assert not os.path.exists(local_path)
-            os.makedirs(local_path, 0o755)
+            os.mkdir(local_path, 0o755)
 
     def convert_to_local_path(self, device_path: str) -> str:
         assert device_path.startswith("/")
@@ -297,7 +333,13 @@ class DirAdapter(LocalMirrorAdapter):
 
 
 def create_adapter(port: Optional[str], mount: Optional[str], dir: Optional[str], **kw) -> Adapter:
-    if dir:
+    if port:
+        from pipkin import serial_connection
+        from pipkin import bare_metal
+
+        connection = serial_connection.SerialConnection(port)
+        return bare_metal.SerialPortAdapter(connection)
+    elif dir:
         return DirAdapter(dir)
     elif mount:
         return MountAdapter(mount)

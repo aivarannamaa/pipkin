@@ -124,7 +124,6 @@ class Session:
                     dist_name=dist_name, target=effective_target, above_target=True
                 )
 
-        self._adapter.create_dir_if_doesnt_exist(effective_target)
         for meta_dir in new_meta_dirs | changed_meta_dirs:
             self._upload_dist_by_meta_dir(meta_dir, effective_target)
 
@@ -359,8 +358,6 @@ class Session:
         with open(record_path) as fp:
             record_lines = fp.read().splitlines()
 
-        ensured_dirs = {target}
-
         for line in record_lines:
             rel_path = line.split(",")[0]
 
@@ -375,10 +372,6 @@ class Session:
             )
 
             full_device_path = self._adapter.join_path(target, rel_path)
-            device_dir_name, _ = self._adapter.split_dir_and_basename(full_device_path)
-            if device_dir_name not in ensured_dirs:
-                self._adapter.create_dir_if_doesnt_exist(device_dir_name)
-                ensured_dirs.add(device_dir_name)
 
             with open(full_path, "rb") as fp:
                 content = fp.read()
@@ -481,16 +474,6 @@ class Session:
         path = self._adapter.join_path(original_container_path, meta_dir_name, file_name)
         return self._adapter.read_file(path)
 
-    def _check_create_dummy(self, meta_dir_name: str, rel_path: str) -> None:
-        # TODO: remove
-        target_path = os.path.normpath(os.path.join(meta_dir_name, rel_path))
-        if os.path.exists(target_path):
-            return
-        dir_name = os.path.dirname(target_path)
-        os.makedirs(dir_name, 0o755, exist_ok=True)
-        with open(target_path, "bw"):
-            pass
-
     def _compute_venv_path(self) -> str:
         try:
             # try to share the pip-execution-venv among all pipkin-running-venvs created from
@@ -519,26 +502,6 @@ class Session:
             or name.endswith(".dist-info")
             and name.split("-")[0] in INITIAL_VENV_DISTS
         )
-
-    def _get_venv_state_all_files(self, root: str = None) -> Dict[str, float]:
-        # TODO: remove if not used
-        """Returns mapping from file names to modification timestamps"""
-        if root is None:
-            root = self._get_venv_site_packages_path()
-
-        result = {}
-        for item_name in os.listdir(root):
-            if self._is_initial_venv_item(item_name):
-                continue
-
-            full_path = os.path.join(root, item_name)
-            if os.path.isfile(full_path):
-                result[full_path] = os.stat(full_path).st_mtime
-            else:
-                assert os.path.isdir(full_path)
-                result.update(self._get_venv_state(full_path))
-
-        return result
 
     def _get_venv_state(self, root: str = None) -> Dict[str, float]:
         """Returns mapping from meta_dir names to modification timestamps of METADATA files"""

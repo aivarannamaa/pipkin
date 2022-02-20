@@ -1,5 +1,6 @@
 import ast
 import binascii
+import errno
 import os
 import re
 import struct
@@ -11,7 +12,7 @@ import time
 
 from pipkin import UserError
 from pipkin.adapters import BaseAdapter
-from pipkin.common import CommunicationError
+from pipkin.common import CommunicationError, ProtocolError, ManagementError
 from pipkin.connection import MicroPythonConnection, ReadingTimeoutError
 from pipkin.serial_connection import SerialConnection
 from pipkin.util import starts_with_continuation_byte
@@ -70,6 +71,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
         write_block_size: Optional[int] = None,
         write_block_delay: Optional[float] = None,
     ):
+        super(BareMetalAdapter, self).__init__()
         self._connection = connection
         (
             self._submit_mode,
@@ -103,12 +105,16 @@ class BareMetalAdapter(BaseAdapter, ABC):
         return submit_mode, write_block_size, write_block_delay
 
     def _interrupt_to_prompt(self) -> None:
+        # It's safer to thoroughly interrupt before poking with RAW_MODE_CMD
+        # as Pico may get stuck otherwise
+        # https://github.com/micropython/micropython/issues/7867
         interventions = [(INTERRUPT_CMD, 0.1), (INTERRUPT_CMD, 0.1), (RAW_MODE_CMD, 0.1)]
 
         for cmd, timeout in interventions:
-            self._connection.write(cmd)
+            self._write(cmd)
             try:
                 self._log_output_until_active_prompt(timeout=timeout)
+                break
             except ReadingTimeoutError as e:
                 logger.info(
                     "Could not get prompt with intervention %r and timeout %r. Read bytes: %r",
@@ -117,7 +123,6 @@ class BareMetalAdapter(BaseAdapter, ABC):
                     e.read_bytes,
                 )
                 # Try again as long as there are interventions left
-                pass
         else:
             raise CommunicationError("Could not get raw REPL")
 
@@ -146,7 +151,10 @@ class BareMetalAdapter(BaseAdapter, ABC):
             )
             + "\n"
         ).lstrip()
-        self._submit_code(script)
+        self._execute_without_output(script)
+
+    def get_sys_path(self) -> List[str]:
+        return self._evaluate("__pipkin_helper.sys.path")
 
     def get_user_packages_path(self) -> Optional[str]:
         return None
@@ -193,22 +201,60 @@ class BareMetalAdapter(BaseAdapter, ABC):
         return b"".join(blocks)
 
     def remove_file(self, path: str) -> None:
-        ...
+        self._execute_without_output(f"__pipkin_helper.os.remove({path!r})")
 
     def remove_dir_if_empty(self, path: str) -> None:
-        ...
+        self._execute_without_output(
+            dedent(
+                f"""
+            if not __pipkin_helper.os.listdir({path!r}):
+                __pipkin_helper.os.remove({path!r})
+        """
+            )
+        )
 
-    def create_dir_if_doesnt_exist(self, path: str) -> None:
-        ...
+    def mkdir_in_existing_parent_exists_ok(self, path: str) -> None:
+        self._execute_without_output(
+            dedent(
+                f"""
+            try:
+                __pipkin_helper.os.mkdir({path!r})
+            except __pipkin_helper.builtins.OSError as e:
+                if e.errno != {errno.EEXIST}:
+                    raise
+        """
+            )
+        )
 
     def list_meta_dir_names(self, path: str, dist_name: Optional[str] = None) -> List[str]:
-        ...
+        if dist_name:
+            dist_name_condition = f"and name.startswith({dist_name+'-'!r})"
+        else:
+            dist_name_condition = ""
+
+        return self._evaluate(
+            dedent(
+                f"""
+            try:
+                __pipkin_helper.print_mgmt_value([
+                    name for name 
+                    in __pipkin_helper.os.listdir({path!r}) 
+                    if name.endswith('.dist-info') {dist_name_condition}
+                ])
+            except OSError as e:
+                if e.errno in [{errno.ENODEV}, {errno.ENOENT}]:
+                    __pipkin_helper.print_mgmt_value([])
+                else:
+                    raise
+"""
+            )
+        )
 
     def _submit_code(self, script: str) -> None:
         assert script
 
         to_be_sent = script.encode("UTF-8")
-        logger.debug("Submitting via %s: %r", self._submit_mode, to_be_sent[:100])
+        logger.debug("Submitting via %s: %r", self._submit_mode, to_be_sent[:1000])
 
         # assuming we are already at a prompt, but threads may have produced something extra
         discarded_bytes = self._connection.read_all()
@@ -403,7 +449,8 @@ class BareMetalAdapter(BaseAdapter, ABC):
 
     def _log_output_until_active_prompt(self, timeout: float = WAIT_OR_CRASH_TIMEOUT) -> None:
         def collect_output(data, stream):
-            logger.info("Discarding %s: %r", stream, data)
+            if data:
+                logger.info("Discarding %s: %r", stream, data)
 
         self._process_output_until_active_prompt(collect_output, timeout=timeout)
 
@@ -487,12 +534,12 @@ class BareMetalAdapter(BaseAdapter, ABC):
 
         out, err = self._execute_and_capture_output(script)
         if err:
-            raise AssertionError("Script produced errors")
+            raise ManagementError("Script produced errors", script, out, err)
         elif (
             MGMT_VALUE_START.decode(ENCODING) not in out
             or MGMT_VALUE_END.decode(ENCODING) not in out
         ):
-            raise AssertionError("Management markers missing")
+            raise ManagementError("Management markers missing", script, out, err)
 
         start_token_pos = out.index(MGMT_VALUE_START.decode(ENCODING))
         end_token_pos = out.index(MGMT_VALUE_END.decode(ENCODING))
@@ -505,7 +552,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
         try:
             value = ast.literal_eval(value_str)
         except Exception as e:
-            raise AssertionError("Could not parse management response") from e
+            raise ManagementError("Could not parse management response", script, out, err) from e
 
         if prefix:
             logger.warning("Eval output had unexpected prefix: %r", prefix)
@@ -537,7 +584,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
         """Meant for management tasks."""
         out, err = self._execute_and_capture_output(script, timeout=timeout)
         if out or err:
-            raise AssertionError("Command output was not empty", script, out, err)
+            raise ManagementError("Command output was not empty", script, out, err)
 
     def _execute_and_capture_output(
         self, script: str, timeout: float = WAIT_OR_CRASH_TIMEOUT
@@ -576,7 +623,12 @@ class SerialPortAdapter(BareMetalAdapter):
         )
         self._mount_path = mount_path
 
-    def write_file(self, path: str, content: bytes) -> None:
+    def _internal_path_to_mounted_path(self, target_path: str) -> str:
+        assert self._mount_path
+        assert target_path.startswith("/")
+        return os.path.normpath(os.path.join(self._mount_path, target_path[1:]))
+
+    def write_file_in_existing_dir(self, path: str, content: bytes) -> None:
         start_time = time.time()
 
         try:
@@ -598,9 +650,7 @@ class SerialPortAdapter(BareMetalAdapter):
         target_path: str,
         content: bytes,
     ) -> None:
-        assert self._mount_path
-        assert target_path.startswith("/")
-        mounted_target_path = os.path.normpath(os.path.join(self._mount_path, target_path[1:]))
+        mounted_target_path = self._internal_path_to_mounted_path(target_path)
         with open(mounted_target_path, "wb") as f:
             bytes_written = 0
             block_size = 4 * 1024
@@ -710,13 +760,46 @@ class SerialPortAdapter(BareMetalAdapter):
             )
         )
 
+    def remove_file(self, path: str) -> None:
+        try:
+            super().remove_file(path)
+        except ManagementError as e:
+            if self._contains_read_only_error(e.out + e.err) and self._mount_path:
+                self._remove_file_via_mount(path)
+            else:
+                raise
+
+    def _remove_file_via_mount(self, target_path: str) -> None:
+        mounted_target_path = self._internal_path_to_mounted_path(target_path)
+        assert os.path.isfile(mounted_target_path)
+        os.remove(mounted_target_path)
+
     def _contains_read_only_error(self, s: str) -> bool:
         canonic_out = s.replace("-", "").lower()
-        return "readonly" in canonic_out or "errno 30" in canonic_out
+        return (
+            "readonly" in canonic_out
+            or f"errno {errno.EROFS}" in canonic_out
+            or f"oserror: {errno.EROFS}" in canonic_out
+        )
+
+    def mkdir_in_existing_parent_exists_ok(self, path: str) -> None:
+        try:
+            super().mkdir_in_existing_parent_exists_ok(path)
+        except ManagementError as e:
+            if self._contains_read_only_error(e.out + e.err):
+                self._mkdir_via_mount(path)
+            else:
+                raise
+
+    def _mkdir_via_mount(self, path: str) -> None:
+        mounted_path = self._internal_path_to_mounted_path(path)
+        if not os.path.isdir(mounted_path):
+            assert not os.path.exists(mounted_path)
+            os.mkdir(mounted_path, 0o755)
 
 
 class WebReplAdapter(BareMetalAdapter):
-    def write_file(self, path: str, content: bytes) -> None:
+    def write_file_in_existing_dir(self, path: str, content: bytes) -> None:
         """
         Adapted from https://github.com/micropython/webrepl/blob/master/webrepl_cli.py
         """
@@ -746,10 +829,6 @@ class WebReplAdapter(BareMetalAdapter):
         sig, code = struct.unpack("<2sH", data)
         assert sig == b"WB"
         return code
-
-
-class ProtocolError(RuntimeError):
-    pass
 
 
 class RawPasteNotSupportedError(RuntimeError):
