@@ -83,6 +83,9 @@ class BareMetalAdapter(BaseAdapter, ABC):
         self._interrupt_to_prompt()
         self._prepare_helper()
 
+    def get_dir_sep(self) -> str:
+        return "/"
+
     def _infer_submit_parameters(
         self,
         submit_mode: Optional[str] = None,
@@ -116,7 +119,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
                 self._log_output_until_active_prompt(timeout=timeout)
                 break
             except ReadingTimeoutError as e:
-                logger.info(
+                logger.debug(
                     "Could not get prompt with intervention %r and timeout %r. Read bytes: %r",
                     cmd,
                     timeout,
@@ -153,8 +156,11 @@ class BareMetalAdapter(BaseAdapter, ABC):
         ).lstrip()
         self._execute_without_output(script)
 
-    def get_sys_path(self) -> List[str]:
+    def fetch_sys_path(self) -> List[str]:
         return self._evaluate("__pipkin_helper.sys.path")
+
+    def fetch_sys_implementation(self) -> Tuple[str, str, int]:
+        return self._evaluate("__pipkin_helper.builtins.tuple(__pipkin_helper.sys.implementation)")
 
     def get_user_packages_path(self) -> Optional[str]:
         return None
@@ -163,7 +169,20 @@ class BareMetalAdapter(BaseAdapter, ABC):
 
         hex_mode = self._should_hexlify(path)
 
-        self._execute_without_output("__pipkin_fp = __pipkin_helper.builtins.open(%r, 'rb')" % path)
+        out, err = self._execute_and_capture_output(
+            dedent(
+                f"""
+            try:
+                __pipkin_fp = __pipkin_helper.builtins.open({path}, 'rb')")
+            except OSError as e:
+                print(e.errno)
+        """
+            )
+        )
+
+        if (out + err).strip() in [str(errno.ENOENT), str(errno.ENODEV)]:
+            raise FileNotFoundError(f"Can't find {path} on target")
+
         if hex_mode:
             self._execute_without_output("from binascii import hexlify as __temp_hexlify")
 
@@ -200,8 +219,18 @@ class BareMetalAdapter(BaseAdapter, ABC):
 
         return b"".join(blocks)
 
-    def remove_file(self, path: str) -> None:
-        self._execute_without_output(f"__pipkin_helper.os.remove({path!r})")
+    def remove_file_if_exists(self, path: str) -> None:
+        self._execute_without_output(
+            dedent(
+                f"""
+            try:
+                __pipkin_helper.os.remove({path!r})
+            except OSError as e:
+                if e.errno not in [{errno.ENOENT}, {errno.ENODEV}]:
+                    raise
+        """
+            )
+        )
 
     def remove_dir_if_empty(self, path: str) -> None:
         self._execute_without_output(
@@ -760,9 +789,9 @@ class SerialPortAdapter(BareMetalAdapter):
             )
         )
 
-    def remove_file(self, path: str) -> None:
+    def remove_file_if_exists(self, path: str) -> None:
         try:
-            super().remove_file(path)
+            super().remove_file_if_exists(path)
         except ManagementError as e:
             if self._contains_read_only_error(e.out + e.err) and self._mount_path:
                 self._remove_file_via_mount(path)

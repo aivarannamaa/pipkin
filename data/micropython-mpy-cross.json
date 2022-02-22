@@ -1,0 +1,79 @@
+{
+  "1.12" : {
+    "windows-AMD64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "macos-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "linux-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_x86_64",
+    "linux-i686" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_i686",
+    "linux-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-armv7l" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_armv7l"
+  },
+  "1.13" : {
+    "windows-AMD64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "macos-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "linux-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_x86_64",
+    "linux-i686" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_i686",
+    "linux-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-armv7l" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_armv7l"
+  },
+  "1.14" : {
+    "windows-AMD64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "macos-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "linux-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_x86_64",
+    "linux-i686" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_i686",
+    "linux-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-armv7l" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_armv7l"
+  },
+  "1.15" : {
+    "windows-AMD64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "macos-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "linux-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_x86_64",
+    "linux-i686" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_i686",
+    "linux-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-armv7l" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_armv7l"
+  },
+  "1.16" : {
+    "windows-AMD64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "macos-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "linux-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_x86_64",
+    "linux-i686" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_i686",
+    "linux-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-armv7l" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_armv7l"
+  },
+  "1.17" : {
+    "windows-AMD64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "macos-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "linux-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_x86_64",
+    "linux-i686" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_i686",
+    "linux-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-armv7l" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_armv7l"
+  },
+  "1.18" : {
+    "windows-AMD64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Windows_32-bit.exe",
+    "macos-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "macos-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/macOS_intel",
+    "linux-x86_64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_x86_64",
+    "linux-i686" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_i686",
+    "linux-arm64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-aarch64" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_aarch64",
+    "linux-armv7l" : "https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/micropython-mpy-cross-binaries/mpy-v5/Linux_armv7l"
+  }
+}

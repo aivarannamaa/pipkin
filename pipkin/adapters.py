@@ -60,17 +60,77 @@ class Adapter(ABC):
     def split_dir_and_basename(self, path: str) -> Tuple[str, str]:
         ...
 
+    @abstractmethod
+    def normpath(self, path: str) -> str:
+        ...
+
+    @abstractmethod
+    def get_implementation_name_and_version_prefix(self) -> Tuple[str, str]:
+        ...
+
+    @abstractmethod
+    def get_mpy_cross_args(self) -> List[str]:
+        ...
+
 
 class BaseAdapter(Adapter, ABC):
     def __init__(self):
         self._ensured_directories = set()
+        self._sys_path: Optional[List[str]] = None
+        self._sys_implementation: Optional[Tuple[str, str, int]] = None
+
+    def get_sys_path(self) -> List[str]:
+        if self._sys_path is None:
+            self._sys_path = self.fetch_sys_path()
+        return self._sys_path
+
+    def get_implementation_name_and_version_prefix(self) -> Tuple[str, str]:
+        impl = self.get_sys_implementation()
+        return impl[0], ".".join(impl[1].split(".")[:2])
+
+    def get_mpy_cross_args(self) -> List[str]:
+        impl = self.get_sys_implementation()
+        sys_mpy = impl[2]
+        if sys_mpy is None:
+            return []
+
+        # https://docs.micropython.org/en/latest/reference/mpyfiles.html#versioning-and-compatibility-of-mpy-files
+        args = []
+        arch = [
+            None,
+            "x86",
+            "x64",
+            "armv6",
+            "armv6m",
+            "armv7m",
+            "armv7em",
+            "armv7emsp",
+            "armv7emdp",
+            "xtensa",
+            "xtensawin",
+        ][sys_mpy >> 10]
+        if arch:
+            args.append("-march=" + arch)
+        if not sys_mpy & 0x200:
+            args.append("-mno-unicode")
+
+        return args
 
     @abstractmethod
-    def get_sys_path(self) -> List[str]:
+    def fetch_sys_path(self) -> List[str]:
+        ...
+
+    def get_sys_implementation(self) -> Tuple[str, str, int]:
+        if self._sys_implementation is None:
+            self._sys_implementation = self.fetch_sys_implementation()
+        return self._sys_implementation
+
+    @abstractmethod
+    def fetch_sys_implementation(self) -> Tuple[str, str, int]:
         ...
 
     @abstractmethod
-    def remove_file(self, path: str) -> None:
+    def remove_file_if_exists(self, path: str) -> None:
         ...
 
     @abstractmethod
@@ -153,7 +213,7 @@ class BaseAdapter(Adapter, ABC):
             rel_path, _, _ = line.split(",")
             abs_path = self.join_path(containing_dir, rel_path)
             logger.debug("Removing file %s", abs_path)
-            self.remove_file(abs_path)
+            self.remove_file_if_exists(abs_path)
             abs_dir, _ = self.split_dir_and_basename(abs_path)
             while len(abs_dir) > len(containing_dir):
                 package_dirs.add(abs_dir)
@@ -164,11 +224,18 @@ class BaseAdapter(Adapter, ABC):
 
     def join_path(self, *parts: str) -> str:
         assert parts
-        return "/".join(parts)
+        return self.get_dir_sep().join(parts)
 
     def split_dir_and_basename(self, path: str) -> Tuple[str, str]:
-        dir_name, basename = path.rsplit("/", maxsplit=1)
+        dir_name, basename = path.rsplit(self.get_dir_sep(), maxsplit=1)
         return dir_name or None, basename or None
+
+    def normpath(self, path: str) -> str:
+        return path.replace("\\", self.get_dir_sep()).replace("/", self.get_dir_sep())
+
+    @abstractmethod
+    def get_dir_sep(self) -> str:
+        ...
 
     def write_file(self, path: str, content: bytes) -> None:
         parent, _ = self.split_dir_and_basename(path)
@@ -208,7 +275,8 @@ class InterpreterAdapter(BaseAdapter, ABC):
 
 
 class ExecutableAdapter(InterpreterAdapter, ABC):
-    ...
+    def get_dir_sep(self) -> str:
+        return os.path.sep
 
 
 class LocalExecutableAdapter(ExecutableAdapter):
@@ -227,9 +295,14 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
     def get_user_packages_path(self) -> Optional[str]:
         return None
 
+    def get_dir_sep(self) -> str:
+        return "/"
+
+    def get_mpy_cross_args(self) -> List[str]:
+        return []
+
     def read_file(self, path: str) -> bytes:
         local_path = self.convert_to_local_path(path)
-        assert os.path.isfile(local_path)
         with open(local_path, "rb") as fp:
             return fp.read()
 
@@ -247,10 +320,10 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
                 os.fsync(fp)
                 assert bytes_written == len(block)
 
-    def remove_file(self, path: str) -> None:
+    def remove_file_if_exists(self, path: str) -> None:
         local_path = self.convert_to_local_path(path)
-        assert os.path.isfile(local_path)
-        os.remove(local_path)
+        if os.path.exists(local_path):
+            os.remove(local_path)
 
     def remove_dir_if_empty(self, path: str) -> None:
         local_path = self.convert_to_local_path(path)
@@ -293,7 +366,7 @@ class MountAdapter(LocalMirrorAdapter):
 
         self._circuitpython_version = self._infer_cp_version()
 
-    def get_sys_path(self) -> List[str]:
+    def fetch_sys_path(self) -> List[str]:
         if os.path.isdir(os.path.join(self.base_path, "lib")) or self.is_circuitpython():
             return ["", "/", ".frozen", "/lib"]
         elif os.path.isdir(os.path.join(self.base_path, "flash")):
@@ -324,9 +397,13 @@ class DirAdapter(LocalMirrorAdapter):
             assert not os.path.exists(base_path)
             os.makedirs(base_path, mode=0o755)
 
-    def get_sys_path(self) -> List[str]:
+    def fetch_sys_path(self) -> List[str]:
         # This means, list command without --path will consider this directory
         return ["/"]
+
+    def fetch_sys_implementation(self) -> Tuple[str, str, int]:
+        # TODO:
+        return ("micropython", "1.18", 0)
 
     def get_default_target(self) -> str:
         return "/"

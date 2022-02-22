@@ -248,6 +248,11 @@ def parse_arguments(raw_args: Optional[List[str]] = None) -> Any:
         help="Reinstall all packages even if they are already up-to-date.",
         action="store_true",
     )
+    install_parser.add_argument(
+        "--compile",
+        help="Compile and install mpy files.",
+        action="store_true",
+    )
 
     uninstall_parser.add_argument(
         "-r",

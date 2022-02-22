@@ -1,9 +1,13 @@
 import hashlib
+import json
 import os.path
+import platform
 import shlex
 import shutil
 import subprocess
 import sys
+import urllib.request
+from urllib.request import urlopen
 import venv
 from logging import getLogger
 from typing import Optional, List, Dict, Tuple
@@ -28,6 +32,7 @@ PRIVATE_PIP_SPEC = "==22.0.*"
 PRIVATE_WHEEL_SPEC = "==0.37.*"
 INITIAL_VENV_DISTS = ["pip", "setuptools", "pkg_resources", "wheel"]
 INITIAL_VENV_FILES = ["easy_install.py"]
+META_ENCODING = "utf-8"
 
 
 class Session:
@@ -53,8 +58,13 @@ class Session:
         upgrade: bool = False,
         upgrade_strategy: str = "only-if-needed",
         force_reinstall: bool = False,
+        compile: Optional[bool] = None,
+        mpy_cross: Optional[str] = None,
         **_,
     ):
+
+        if compile is None and mpy_cross:
+            compile = True
 
         args = ["install", "--no-compile"]
 
@@ -125,7 +135,7 @@ class Session:
                 )
 
         for meta_dir in new_meta_dirs | changed_meta_dirs:
-            self._upload_dist_by_meta_dir(meta_dir, effective_target)
+            self._upload_dist_by_meta_dir(meta_dir, effective_target, compile, mpy_cross)
 
         if new_meta_dirs or changed_meta_dirs:
             self._report_progress("All changes applied.")
@@ -350,22 +360,33 @@ class Session:
 
         return args
 
-    def _upload_dist_by_meta_dir(self, meta_dir_name: str, target: str) -> None:
+    def _upload_dist_by_meta_dir(
+        self, meta_dir_name: str, target: str, compile: bool, mpy_cross: Optional[str]
+    ) -> None:
         self._report_progress(f"Copying {parse_meta_dir_name(meta_dir_name)[0]}", end="")
-        record_path = os.path.join(self._get_venv_site_packages_path(), meta_dir_name, "RECORD")
+        rel_record_path = os.path.join(meta_dir_name, "RECORD")
+        record_path = os.path.join(self._get_venv_site_packages_path(), rel_record_path)
         assert os.path.exists(record_path)
 
-        with open(record_path) as fp:
+        target_record_lines = []
+
+        with open(record_path, encoding=META_ENCODING) as fp:
             record_lines = fp.read().splitlines()
 
         for line in record_lines:
             rel_path = line.split(",")[0]
-
             # don't consider files installed to e.g. bin-directory
             if rel_path.startswith(".."):
                 continue
 
-            # TODO: skip some meta files
+            # don't consider absolute paths
+            if os.path.isabs(rel_path):
+                logger.warning("Skipping absolute path %s", rel_path)
+                continue
+
+            # only consider METADATA from meta dir
+            if rel_path.startswith(meta_dir_name) and os.path.basename(rel_path) != "METADATA":
+                continue
 
             full_path = os.path.normpath(
                 os.path.join(self._get_venv_site_packages_path(), rel_path)
@@ -373,16 +394,42 @@ class Session:
 
             full_device_path = self._adapter.join_path(target, rel_path)
 
+            if full_path.endswith(".py") and compile:
+                self._compile_with_mpy_cross(
+                    full_path, self._get_compiled_path(full_path), mpy_cross
+                )
+                # forget about the .py file
+                full_path = self._get_compiled_path(full_path)
+                full_device_path = self._get_compiled_path(full_path)
+                rel_path = self._get_compiled_path(rel_path)
+
             with open(full_path, "rb") as fp:
                 content = fp.read()
 
-            # TODO: simplify METADATA and RECORD
+            if rel_path.startswith(meta_dir_name) and os.path.basename(rel_path) == "METADATA":
+                content = self._trim_metadata(content)
 
             self._adapter.write_file(full_device_path, content)
             self._report_progress(".", end="")
+            target_record_lines.append(self._adapter.normpath(rel_path) + ",,")
 
-        # add linebreak
+        # add RECORD (without hashes)
+        target_record_lines.append(self._adapter.normpath(rel_record_path) + ",,")
+        full_device_record_path = self._adapter.join_path(target, rel_record_path)
+        self._adapter.write_file(
+            full_device_record_path, "\n".join(target_record_lines).encode(META_ENCODING)
+        )
+
+        # add linebreak for the report
         self._report_progress("")
+
+    def _trim_metadata(self, content: bytes) -> bytes:
+        # TODO:
+        return content
+
+    def _get_compiled_path(self, source_path: str) -> str:
+        assert source_path.endswith(".py")
+        return source_path[: -len(".py")] + ".mpy"
 
     def _prepare_venv(self) -> Tuple[BaseFileLock, str]:
         # 1. create sample venv (if it doesn't exist yet)
@@ -459,11 +506,12 @@ class Session:
             with open(os.path.join(meta_path, name), "bw") as fp:
                 fp.write(content)
 
+        # INSTALLER is mandatory according to https://www.python.org/dev/peps/pep-0376/
         with open(os.path.join(meta_path, "INSTALLER"), "w") as fp:
             fp.write("pip\n")
 
         # create dummy RECORD
-        with open(os.path.join(meta_path, "RECORD"), "w") as fp:
+        with open(os.path.join(meta_path, "RECORD"), "w", encoding=META_ENCODING) as fp:
             for name in ["METADATA", "INSTALLER", "RECORD"]:
                 fp.write(f"{meta_dir_name}/{name},,\n")
 
@@ -562,6 +610,67 @@ class Session:
         env["PIP_CACHE_DIR"] = self._get_pipkin_cache_dir()
 
         subprocess.check_call(pip_cmd, env=env)
+
+    def _compile_with_mpy_cross(
+        self, source_path: str, target_path: str, mpy_cross_path: Optional[str]
+    ) -> None:
+        if mpy_cross_path is None:
+            mpy_cross_path = self._ensure_mpy_cross()
+
+        # user-provided executable is assumed to have been validated with proper error messages in main()
+        assert os.path.exists
+        assert os.access(mpy_cross_path, os.X_OK)
+        args = (
+            [mpy_cross_path] + self._adapter.get_mpy_cross_args() + ["-o", target_path, source_path]
+        )
+        subprocess.check_call(args)
+
+    def _ensure_mpy_cross(self) -> str:
+        impl_name, ver_prefix = self._adapter.get_implementation_name_and_version_prefix()
+        path = self._get_mpy_cross_path(impl_name, ver_prefix)
+        if not os.path.exists(path):
+            self._download_mpy_cross(impl_name, ver_prefix, path)
+        return path
+
+    def _download_mpy_cross(
+        self, implementation_name: str, version_prefix: str, target_path: str
+    ) -> None:
+        os.makedirs(os.path.dirname(target_path))
+        meta_url = f"https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/{implementation_name}-mpy-cross.json"
+        with urlopen(url=meta_url) as fp:
+            meta = json.load(fp)
+
+        if version_prefix not in meta:
+            raise UserError(f"Can't find mpy-cross for {implementation_name} {version_prefix}")
+
+        version_data = meta[version_prefix]
+
+        if sys.platform == "win32":
+            os_marker = "windows"
+        elif sys.platform == "darwin":
+            os_marker = "macos"
+        elif sys.platform == "linux":
+            os_marker = "linux"
+        else:
+            raise AssertionError(f"Unexpected sys.platform {sys.platform}")
+
+        full_marker = f"{os_marker}-{platform.machine()}"
+
+        if full_marker not in version_data:
+            raise UserError(
+                f"Can't find {full_marker} mpy-cross for {implementation_name} {version_prefix}"
+            )
+
+        download_url = version_data[full_marker]
+
+        urllib.request.urlretrieve(download_url, target_path)
+
+    def _get_mpy_cross_path(self, implementation_name: str, version_prefix: str) -> str:
+        basename = f"mpy-cross_{implementation_name}_{version_prefix}"
+        if sys.platform == "win32":
+            basename += ".exe"
+
+        return os.path.join(self._get_pipkin_cache_dir(), "mpy-cross", basename)
 
     def _report_progress(self, msg: str, end="\n") -> None:
         if not self._quiet:
