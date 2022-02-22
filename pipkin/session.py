@@ -4,6 +4,7 @@ import os.path
 import platform
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import urllib.request
@@ -400,7 +401,7 @@ class Session:
                 )
                 # forget about the .py file
                 full_path = self._get_compiled_path(full_path)
-                full_device_path = self._get_compiled_path(full_path)
+                full_device_path = self._get_compiled_path(full_device_path)
                 rel_path = self._get_compiled_path(rel_path)
 
             with open(full_path, "rb") as fp:
@@ -428,7 +429,7 @@ class Session:
         return content
 
     def _get_compiled_path(self, source_path: str) -> str:
-        assert source_path.endswith(".py")
+        assert source_path.endswith(".py"), f"Source path: {source_path}"
         return source_path[: -len(".py")] + ".mpy"
 
     def _prepare_venv(self) -> Tuple[BaseFileLock, str]:
@@ -635,7 +636,7 @@ class Session:
     def _download_mpy_cross(
         self, implementation_name: str, version_prefix: str, target_path: str
     ) -> None:
-        os.makedirs(os.path.dirname(target_path))
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
         meta_url = f"https://raw.githubusercontent.com/aivarannamaa/pipkin/master/data/{implementation_name}-mpy-cross.json"
         with urlopen(url=meta_url) as fp:
             meta = json.load(fp)
@@ -664,6 +665,7 @@ class Session:
         download_url = version_data[full_marker]
 
         urllib.request.urlretrieve(download_url, target_path)
+        os.chmod(target_path, os.stat(target_path).st_mode | stat.S_IEXEC)
 
     def _get_mpy_cross_path(self, implementation_name: str, version_prefix: str) -> str:
         basename = f"mpy-cross_{implementation_name}_{version_prefix}"
