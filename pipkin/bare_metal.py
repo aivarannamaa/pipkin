@@ -232,12 +232,15 @@ class BareMetalAdapter(BaseAdapter, ABC):
             )
         )
 
-    def remove_dir_if_empty(self, path: str) -> None:
-        self._execute_without_output(
+    def remove_dir_if_empty(self, path: str) -> bool:
+        return self._evaluate(
             dedent(
                 f"""
-            if not __pipkin_helper.os.listdir({path!r}):
+            if __pipkin_helper.os.listdir({path!r}):
+                __pipkin_helper.print_mgmt_value(False)
+            else:
                 __pipkin_helper.os.remove({path!r})
+                __pipkin_helper.print_mgmt_value(True)
         """
             )
         )
@@ -825,6 +828,23 @@ class SerialPortAdapter(BareMetalAdapter):
         if not os.path.isdir(mounted_path):
             assert not os.path.exists(mounted_path)
             os.mkdir(mounted_path, 0o755)
+
+    def remove_dir_if_empty(self, path: str) -> bool:
+        try:
+            return super().remove_dir_if_empty(path)
+        except ManagementError as e:
+            if self._contains_read_only_error(e.out + e.err):
+                self._mkdir_via_mount(path)
+            else:
+                raise
+
+    def _remove_dir_if_empty_via_mount(self, path: str) -> bool:
+        mounted_path = self._internal_path_to_mounted_path(path)
+        if os.listdir(mounted_path):
+            return False
+        else:
+            os.rmdir(mounted_path)
+            return True
 
 
 class WebReplAdapter(BareMetalAdapter):

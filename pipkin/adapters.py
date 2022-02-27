@@ -13,6 +13,13 @@ logger = getLogger(__name__)
 
 
 class Adapter(ABC):
+    """
+    An instance of Adapter is meant to be used by single instance of Session.
+    It is assumed that during the lifetime of an Adapter, sys.path stays fixed and
+    distributions and sys.path directories are only manipulated via this Adapter.
+    This requirement is related to the caching used in BaseAdapter.
+    """
+
     @abstractmethod
     def get_user_packages_path(self) -> Optional[str]:
         """Unix / Windows ports return the location of user packages"""
@@ -134,7 +141,7 @@ class BaseAdapter(Adapter, ABC):
         ...
 
     @abstractmethod
-    def remove_dir_if_empty(self, path: str) -> None:
+    def remove_dir_if_empty(self, path: str) -> bool:
         ...
 
     @abstractmethod
@@ -220,7 +227,9 @@ class BaseAdapter(Adapter, ABC):
                 abs_dir, _ = self.split_dir_and_basename(abs_dir)
 
         for abs_dir in sorted(package_dirs, reverse=True):
-            self.remove_dir_if_empty(abs_dir)
+            did_remove = self.remove_dir_if_empty(abs_dir)
+            if did_remove and abs_dir in self._ensured_directories:
+                self._ensured_directories.remove(abs_dir)
 
     def join_path(self, *parts: str) -> str:
         assert parts
@@ -325,12 +334,15 @@ class LocalMirrorAdapter(BaseAdapter, ABC):
         if os.path.exists(local_path):
             os.remove(local_path)
 
-    def remove_dir_if_empty(self, path: str) -> None:
+    def remove_dir_if_empty(self, path: str) -> bool:
         local_path = self.convert_to_local_path(path)
         assert os.path.isdir(local_path)
         content = os.listdir(local_path)
-        if not content:
+        if content:
+            return False
+        else:
             os.rmdir(local_path)
+            return True
 
     def mkdir_in_existing_parent_exists_ok(self, path: str) -> None:
         local_path = self.convert_to_local_path(path)
