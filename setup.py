@@ -1,11 +1,11 @@
 import os.path
 import sys
 
-from setuptools import find_packages, setup
+from setuptools import setup
 
 setupdir = os.path.dirname(__file__)
 
-for line in open(os.path.join(setupdir, "pipkin.py")).read().splitlines():
+for line in open(os.path.join(setupdir, "pipkin", "__init__.py")).read().splitlines():
     if line.startswith("__version__"):
         version = line.split('"')[1]
         break
