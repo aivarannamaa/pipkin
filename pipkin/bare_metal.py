@@ -169,19 +169,23 @@ class BareMetalAdapter(BaseAdapter, ABC):
 
         hex_mode = self._should_hexlify(path)
 
-        out, err = self._execute_and_capture_output(
-            dedent(
-                f"""
+        open_script = dedent(
+            f"""
             try:
-                __pipkin_fp = __pipkin_helper.builtins.open({path}, 'rb')")
+                __pipkin_fp = __pipkin_helper.builtins.open({path!r}, 'rb')
             except OSError as e:
-                print(e.errno)
+                print(e)
         """
-            )
         )
+        out, err = self._execute_and_capture_output(open_script)
 
-        if (out + err).strip() in [str(errno.ENOENT), str(errno.ENODEV)]:
-            raise FileNotFoundError(f"Can't find {path} on target")
+        if (out + err).strip():
+            if any([str(nr) in out + err for nr in [errno.ENOENT, errno.ENODEV]]):
+                raise FileNotFoundError(f"Can't find {path} on target")
+            else:
+                raise ManagementError(
+                    f"Could not open file {path} for reading", script=open_script, out=out, err=err
+                )
 
         if hex_mode:
             self._execute_without_output("from binascii import hexlify as __temp_hexlify")
@@ -527,7 +531,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
                     if EOT in content:
                         out, err = content.split(EOT, maxsplit=1)
                     elif TRACEBACK_MARKER in content:
-                        out, err = content.split(EOT, maxsplit=1)
+                        out, err = content.split(TRACEBACK_MARKER, maxsplit=1)
                         err = TRACEBACK_MARKER + err
                     else:
                         out = content

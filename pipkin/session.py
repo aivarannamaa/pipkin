@@ -29,11 +29,17 @@ from pipkin.util import (
 
 logger = getLogger(__name__)
 
-PRIVATE_PIP_SPEC = "==22.0.*"
-PRIVATE_WHEEL_SPEC = "==0.37.*"
 INITIAL_VENV_DISTS = ["pip", "setuptools", "pkg_resources", "wheel"]
 INITIAL_VENV_FILES = ["easy_install.py"]
 META_ENCODING = "utf-8"
+
+
+@dataclass(frozen=True)
+class DistInfo:
+    key: str
+    project_name: str
+    version: str
+    location: str
 
 
 class Session:
@@ -67,7 +73,7 @@ class Session:
         if compile is None and mpy_cross:
             compile = True
 
-        args = ["install", "--no-compile"]
+        args = ["install", "--no-compile", "--use-pep517"]
 
         if upgrade:
             args.append("--upgrade")
@@ -90,7 +96,7 @@ class Session:
             args,
             no_mp_org=no_mp_org,
             index_url=index_url,
-            extra_index_urls=extra_index_urls,
+            extra_index_urls=extra_index_urls or [],
             no_index=no_index,
             find_links=find_links,
         )
@@ -218,6 +224,16 @@ class Session:
             find_links=find_links,
         )
 
+    def basic_list(self) -> Set[DistInfo]:
+        dists_by_name = self._adapter.list_dists()
+        result = set()
+        for name in dists_by_name:
+            meta_dir_name, location = dists_by_name[name]
+            name, version = parse_meta_dir_name(meta_dir_name)
+            result.add(DistInfo(key=name, project_name=name, version=version, location=location))
+
+        return result
+
     def show(self, packages: List[str], **_):
         self._populate_venv()
         self._invoke_pip(["show"] + packages)
@@ -318,13 +334,12 @@ class Session:
         )
 
     def cache(self, cache_command: str, **_) -> None:
-        self._invoke_pip(["cache", cache_command])
-
         if cache_command == "purge":
-            self.close()
-            for name in os.listdir(self._get_workspaces_dir()):
-                full_path = os.path.join(self._get_workspaces_dir(), name)
-                shutil.rmtree(full_path)
+            shutil.rmtree(self._get_pipkin_cache_dir())
+        elif cache_command == "dir":
+            print(self._get_pipkin_cache_dir())
+        else:
+            self._invoke_pip(["cache", cache_command])
 
     def close(self) -> None:
         # self._clear_venv()
@@ -450,8 +465,9 @@ class Session:
                     "install",
                     "--no-warn-script-location",
                     "--upgrade",
-                    f"pip{PRIVATE_PIP_SPEC}",
-                    f"wheel{PRIVATE_WHEEL_SPEC}",
+                    "pip==22.0.*",
+                    "setuptools==60.9.*",
+                    "wheel==0.37.*",
                 ]
             )
             logger.info("Done preparing working environment.")
@@ -609,6 +625,13 @@ class Session:
 
         env = {key: os.environ[key] for key in os.environ if not key.startswith("PIP_")}
         env["PIP_CACHE_DIR"] = self._get_pipkin_cache_dir()
+
+        for key in ["PYTHONPATH", "VIRTUAL_ENV"]:
+            if key in env:
+                del env[key]
+
+        for key in sorted(env):
+            print(key, ":", env[key][:50])
 
         subprocess.check_call(pip_cmd, env=env)
 
