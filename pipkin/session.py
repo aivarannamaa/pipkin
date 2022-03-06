@@ -8,13 +8,14 @@ import stat
 import subprocess
 import sys
 import urllib.request
-from urllib.request import urlopen
 import venv
+from dataclasses import dataclass
 from logging import getLogger
-from typing import Optional, List, Dict, Tuple
+from typing import Dict, List, Optional, Set, Tuple
+from urllib.request import urlopen
 
 import filelock
-from filelock import FileLock, BaseFileLock
+from filelock import BaseFileLock, FileLock
 
 from pipkin.adapters import Adapter
 from pipkin.common import UserError
@@ -625,13 +626,6 @@ class Session:
 
         env = {key: os.environ[key] for key in os.environ if not key.startswith("PIP_")}
         env["PIP_CACHE_DIR"] = self._get_pipkin_cache_dir()
-
-        for key in ["PYTHONPATH", "VIRTUAL_ENV"]:
-            if key in env:
-                del env[key]
-
-        for key in sorted(env):
-            print(key, ":", env[key][:50])
 
         subprocess.check_call(pip_cmd, env=env)
 

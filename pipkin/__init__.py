@@ -1,11 +1,11 @@
-import subprocess
-import traceback
-from typing import Optional, List
-import sys
 import logging
+import subprocess
+import sys
+import traceback
+from typing import List, Optional
 
 from pipkin.adapters import create_adapter
-from pipkin.common import UserError, ManagementError
+from pipkin.common import ManagementError, UserError
 from pipkin.session import Session
 
 logger = logging.getLogger("pipkin")

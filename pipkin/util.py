@@ -1,6 +1,6 @@
-import sys
 import os.path
 import subprocess
+import sys
 from typing import Tuple
 
 

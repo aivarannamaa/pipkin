@@ -2,7 +2,7 @@ import os.path
 import re
 from abc import ABC, abstractmethod
 from logging import getLogger
-from typing import Optional, List, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from pipkin.common import UserError
 from pipkin.util import parse_meta_dir_name
@@ -423,8 +423,7 @@ class DirAdapter(LocalMirrorAdapter):
 
 def create_adapter(port: Optional[str], mount: Optional[str], dir: Optional[str], **kw) -> Adapter:
     if port:
-        from pipkin import serial_connection
-        from pipkin import bare_metal
+        from pipkin import bare_metal, serial_connection
 
         connection = serial_connection.SerialConnection(port)
         return bare_metal.SerialPortAdapter(connection)

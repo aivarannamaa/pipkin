@@ -4,15 +4,15 @@ import errno
 import os
 import re
 import struct
-from abc import ABC
-from textwrap import dedent
-from typing import Optional, List, Tuple, Callable, Any
-from logging import getLogger
 import time
+from abc import ABC
+from logging import getLogger
+from textwrap import dedent
+from typing import Any, Callable, List, Optional, Tuple
 
 from pipkin import UserError
 from pipkin.adapters import BaseAdapter
-from pipkin.common import CommunicationError, ProtocolError, ManagementError
+from pipkin.common import CommunicationError, ManagementError, ProtocolError
 from pipkin.connection import MicroPythonConnection, ReadingTimeoutError
 from pipkin.serial_connection import SerialConnection
 from pipkin.util import starts_with_continuation_byte

@@ -1,6 +1,6 @@
 import argparse
 import sys
-from typing import Optional, List, Any
+from typing import Any, List, Optional
 
 from pipkin import __version__
 

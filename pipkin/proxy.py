@@ -31,10 +31,10 @@ import shlex
 import tarfile
 import threading
 from html.parser import HTMLParser
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import BaseServer
 from textwrap import dedent
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
