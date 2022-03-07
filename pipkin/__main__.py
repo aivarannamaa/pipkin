@@ -28,6 +28,8 @@ import sys
 import textwrap
 from typing import List, Optional
 
+from pipkin import main
+
 logger = logging.getLogger(__name__)
 
 MP_ORG_INDEX = "https://micropython.org/pi"
@@ -56,7 +58,5 @@ steps:
 
 """
 
-
-from pipkin import main
 
 sys.exit(main(sys.argv[1:]))

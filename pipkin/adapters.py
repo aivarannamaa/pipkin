@@ -279,7 +279,7 @@ class InterpreterAdapter(BaseAdapter, ABC):
     """Base class for adapters, which communicate with an interpreter"""
 
     def __init__(self, executable: str):
-        super(InterpreterAdapter, self).__init__()
+        super().__init__()
         self._executable = executable
 
 
@@ -298,7 +298,7 @@ class SshExecutableAdapter(ExecutableAdapter):
 
 class LocalMirrorAdapter(BaseAdapter, ABC):
     def __init__(self, base_path: str):
-        super(LocalMirrorAdapter, self).__init__()
+        super().__init__()
         self.base_path = base_path
 
     def get_user_packages_path(self) -> Optional[str]:
@@ -386,6 +386,12 @@ class MountAdapter(LocalMirrorAdapter):
         else:
             return ["", "/", ".frozen", "/lib"]
 
+    def fetch_sys_implementation(self) -> Tuple[str, str, int]:
+        if self._circuitpython_version:
+            return ("circuitpython", self._circuitpython_version, 0)
+        else:
+            raise UserError("Could not determine sys.implementation")
+
     def is_circuitpython(self) -> bool:
         # TODO: better look into the file as well
         return os.path.isfile(os.path.join(self.base_path, "boot_out.txt"))
@@ -393,7 +399,7 @@ class MountAdapter(LocalMirrorAdapter):
     def _infer_cp_version(self) -> Optional[str]:
         boot_out_path = os.path.join(self.base_path, "boot_out.txt")
         if os.path.exists(boot_out_path):
-            with open(boot_out_path) as fp:
+            with open(boot_out_path, encoding="utf-8") as fp:
                 firmware_info = fp.readline().strip()
             match = re.match(r".*?CircuitPython (\d+\.\d+)\..+?", firmware_info)
             if match:

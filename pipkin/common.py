@@ -12,7 +12,7 @@ class ProtocolError(RuntimeError):
 
 class ManagementError(ProtocolError):
     def __init__(self, msg: str, script: str, out: str, err: str):
-        RuntimeError.__init__(self, msg)
+        super().__init__(self, msg)
         self.script = script
         self.out = out
         self.err = err

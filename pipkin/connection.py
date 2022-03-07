@@ -45,7 +45,7 @@ class MicroPythonConnection:
 
             try:
                 self._read_buffer.extend(self._read_queue.get(True, timer.time_left))
-            except queue.Empty:
+            except queue.Empty as e:
                 if timeout_is_soft:
                     return b""
                 else:
@@ -55,7 +55,7 @@ class MicroPythonConnection:
                         timeout,
                         self._read_buffer,
                     )
-                    raise ReadingTimeoutError(read_bytes=self._read_buffer)
+                    raise ReadingTimeoutError(read_bytes=self._read_buffer) from e
 
         try:
             data = self._read_buffer[:size]
@@ -193,7 +193,7 @@ class ConnectionFailedException(ConnectionError):
 
 class ReadingTimeoutError(TimeoutError):
     def __init__(self, read_bytes: bytes):
-        super().__init__(f"Read bytes: {read_bytes}")
+        super().__init__(f"Read bytes: {read_bytes!r}")
         self.read_bytes = read_bytes
 
 

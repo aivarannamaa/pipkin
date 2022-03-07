@@ -5,10 +5,10 @@ import time
 from logging import getLogger
 from textwrap import dedent
 
-OUTPUT_ENQ = b"\x05"
-OUTPUT_ACK = b"\x06"
 from .connection import ConnectionFailedException, MicroPythonConnection
 
+OUTPUT_ENQ = b"\x05"
+OUTPUT_ACK = b"\x06"
 NORMAL_PROMPT = b">>> "
 FIRST_RAW_PROMPT = b"raw REPL; CTRL-B to exit\r\n>"
 
@@ -53,7 +53,7 @@ class SerialConnection(MicroPythonConnection):
             if error.errno == 13 and sys.platform == "linux":
                 try:
                     group = pathlib.Path(self._serial.port).group()
-                except Exception as e:
+                except Exception:
                     logger.warning("Could not query group for '%s'", self._serial.port)
                     group = "dialoutfb"
 
@@ -76,7 +76,7 @@ class SerialConnection(MicroPythonConnection):
             elif error.errno == 16:
                 message += "\n\n" + "Try restarting the device."
 
-            raise ConnectionFailedException(message)
+            raise ConnectionFailedException(message) from error
 
         if skip_reader:
             self._reading_thread = None

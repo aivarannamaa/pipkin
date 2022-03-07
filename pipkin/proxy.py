@@ -23,6 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import copy
+import email.parser
 import errno
 import io
 import json
@@ -47,18 +48,12 @@ SERVER_ENCODING = "utf-8"
 # For efficient caching it's better if the proxy always runs at the same port
 PREFERRED_PORT = 36628
 
-try:
-    from shlex import join as shlex_join
-except ImportError:
-    # before Python 3.8
-    def shlex_join(split_command):
-        """Return a shell-escaped string from *split_command*."""
-        return " ".join(shlex.quote(arg) for arg in split_command)
-
-
-import email.parser
-
 logger = logging.getLogger(__name__)
+
+
+def shlex_join(split_command):
+    """Return a shell-escaped string from *split_command*."""
+    return " ".join(shlex.quote(arg) for arg in split_command)
 
 
 class SimpleUrlsParser(HTMLParser):
@@ -153,8 +148,8 @@ class PipkinProxy(HTTPServer):
     def __init__(
         self, no_mp_org: bool, index_url: Optional[str], extra_index_urls: List[str], port: int
     ):
-        self._downloaders = []
-        self._downloaders_by_dist_name = {}
+        self._downloaders: List[BaseIndexDownloader] = []
+        self._downloaders_by_dist_name: Dict[str, BaseIndexDownloader] = {}
         if not no_mp_org:
             self._downloaders.append(JsonIndexDownloader(MP_ORG_INDEX))
         self._downloaders.append(SimpleIndexDownloader(index_url or PYPI_SIMPLE_INDEX))
@@ -243,9 +238,9 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         assert file_name in urls
         url = urls[file_name]
         logger.debug("Downloading file from %s", url)
-        result = urlopen(url)
-        logger.debug("Headers: %r", result.headers.items())
-        return result.read()
+        with urlopen(url) as result:
+            logger.debug("Headers: %r", result.headers.items())
+            return result.read()
 
     def _tweak_file(self, dist_name: str, file_name: str, original_bytes: bytes) -> bytes:
         if not file_name.lower().endswith(".tar.gz"):
@@ -390,7 +385,7 @@ tag_date = 0
     ) -> str:
 
         src = dedent(
-            f"""
+            """
             from setuptools import setup
             setup (
             """

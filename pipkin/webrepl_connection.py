@@ -23,7 +23,7 @@ class WebReplConnection(MicroPythonConnection):
 
         try:
             import websockets  # @UnusedImport
-        except:
+        except Exception:
             print(
                 "Can't import `websockets`. You can install it via 'Tools => Manage plug-ins'.",
                 file=sys.stderr,
@@ -76,7 +76,7 @@ class WebReplConnection(MicroPythonConnection):
                 self._ws = await websockets.connect(self._url, ping_interval=None)
         except OSError as e:
             # print("\nCould not connect:", e, file=sys.stderr)
-            raise ConnectionFailedException(str(e))
+            raise ConnectionFailedException(str(e)) from e
         logger.debug("GOT WS: %r", self._ws)
 
         # read password prompt and send password

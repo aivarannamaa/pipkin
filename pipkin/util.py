@@ -7,13 +7,16 @@ from typing import Tuple
 def get_windows_folder(ID: int) -> str:
     # http://stackoverflow.com/a/3859336/261181
     # http://www.installmate.com/support/im9/using/symbols/functions/csidls.htm
-    import ctypes.wintypes
+    if sys.platform == "win32":
+        import ctypes.wintypes
 
-    SHGFP_TYPE_CURRENT = 0
-    buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
-    ctypes.windll.shell32.SHGetFolderPathW(0, ID, 0, SHGFP_TYPE_CURRENT, buf)
-    assert buf.value
-    return buf.value
+        SHGFP_TYPE_CURRENT = 0
+        buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
+        ctypes.windll.shell32.SHGetFolderPathW(0, ID, 0, SHGFP_TYPE_CURRENT, buf)
+        assert buf.value
+        return buf.value
+    else:
+        raise AssertionError("Meant to be used only on Windows")
 
 
 def get_windows_roaming_appdata_dir() -> str:
@@ -71,7 +74,7 @@ def parse_meta_dir_name(name: str) -> Tuple[str, str]:
 
 
 def starts_with_continuation_byte(data: bytes) -> bool:
-    return data and is_continuation_byte(data[0])
+    return len(data) > 0 and is_continuation_byte(data[0])
 
 
 def is_continuation_byte(byte: int) -> bool:

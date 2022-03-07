@@ -127,7 +127,7 @@ class Session:
             self._report_progress(f"Removing old version of {parse_meta_dir_name(meta_dir)[0]}")
             # if target is specified by --target or --user, then don't touch anything
             # besides corresponding directory, regardless of the sys.path and possible hiding
-            dist_name, version = parse_meta_dir_name(meta_dir)
+            dist_name, _version = parse_meta_dir_name(meta_dir)
             if target:
                 # pip doesn't remove old dist with --target unless --upgrade is given
                 if upgrade:
@@ -175,7 +175,7 @@ class Session:
 
         for meta_dir_name in removed_meta_dirs:
             self._report_progress(f"Removing {parse_meta_dir_name(meta_dir_name)[0]}")
-            dist_name, version = parse_meta_dir_name(meta_dir_name)
+            dist_name, _version = parse_meta_dir_name(meta_dir_name)
             self._adapter.remove_dist(dist_name)
 
         if removed_meta_dirs:
@@ -420,8 +420,8 @@ class Session:
                 full_device_path = self._get_compiled_path(full_device_path)
                 rel_path = self._get_compiled_path(rel_path)
 
-            with open(full_path, "rb") as fp:
-                content = fp.read()
+            with open(full_path, "rb") as source_fp:
+                content = source_fp.read()
 
             if rel_path.startswith(meta_dir_name) and os.path.basename(rel_path) == "METADATA":
                 content = self._trim_metadata(content)
@@ -521,17 +521,17 @@ class Session:
 
         for name in ["METADATA"]:
             content = self._read_dist_meta_file(meta_dir_name, name, original_path)
-            with open(os.path.join(meta_path, name), "bw") as fp:
-                fp.write(content)
+            with open(os.path.join(meta_path, name), "bw") as meta_fp:
+                meta_fp.write(content)
 
         # INSTALLER is mandatory according to https://www.python.org/dev/peps/pep-0376/
-        with open(os.path.join(meta_path, "INSTALLER"), "w") as fp:
-            fp.write("pip\n")
+        with open(os.path.join(meta_path, "INSTALLER"), "w", encoding="utf-8") as installer_fp:
+            installer_fp.write("pip\n")
 
         # create dummy RECORD
-        with open(os.path.join(meta_path, "RECORD"), "w", encoding=META_ENCODING) as fp:
+        with open(os.path.join(meta_path, "RECORD"), "w", encoding=META_ENCODING) as record_fp:
             for name in ["METADATA", "INSTALLER", "RECORD"]:
-                fp.write(f"{meta_dir_name}/{name},,\n")
+                record_fp.write(f"{meta_dir_name}/{name},,\n")
 
     def _read_dist_meta_file(
         self, meta_dir_name: str, file_name: str, original_container_path: str
@@ -545,7 +545,7 @@ class Session:
             # try to share the pip-execution-venv among all pipkin-running-venvs created from
             # same base executable
             exe = get_base_executable()
-        except:
+        except Exception:
             exe = sys.executable
 
         venv_name = hashlib.md5(str((exe, sys.version_info[0:2])).encode("utf-8")).hexdigest()

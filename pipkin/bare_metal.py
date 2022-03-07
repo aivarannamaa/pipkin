@@ -8,7 +8,7 @@ import time
 from abc import ABC
 from logging import getLogger
 from textwrap import dedent
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from pipkin import UserError
 from pipkin.adapters import BaseAdapter
@@ -71,14 +71,14 @@ class BareMetalAdapter(BaseAdapter, ABC):
         write_block_size: Optional[int] = None,
         write_block_delay: Optional[float] = None,
     ):
-        super(BareMetalAdapter, self).__init__()
+        super().__init__()
         self._connection = connection
         (
             self._submit_mode,
             self._write_block_size,
             self._write_block_delay,
         ) = self._infer_submit_parameters(submit_mode, write_block_size, write_block_delay)
-        self._last_prompt: Optional[str] = None
+        self._last_prompt: Optional[bytes] = None
 
         self._interrupt_to_prompt()
         self._prepare_helper()
@@ -180,7 +180,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
         out, err = self._execute_and_capture_output(open_script)
 
         if (out + err).strip():
-            if any([str(nr) in out + err for nr in [errno.ENOENT, errno.ENODEV]]):
+            if any(str(nr) in out + err for nr in [errno.ENOENT, errno.ENODEV]):
                 raise FileNotFoundError(f"Can't find {path} on target")
             else:
                 raise ManagementError(
@@ -625,7 +625,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
     def _execute_and_capture_output(
         self, script: str, timeout: float = WAIT_OR_CRASH_TIMEOUT
     ) -> Tuple[str, str]:
-        output_lists = {"stdout": [], "stderr": []}
+        output_lists: Dict[str, List[str]] = {"stdout": [], "stderr": []}
 
         def consume_output(data, stream_name):
             assert isinstance(data, str)
@@ -669,7 +669,7 @@ class SerialPortAdapter(BareMetalAdapter):
 
         try:
             self._write_file_via_serial(path, content)
-        except ReadOnlyFilesystemError:
+        except ReadOnlyFilesystemError as e:
             if self._mount_path is not None:
                 self._write_file_via_mount(path, content)
             else:
@@ -677,7 +677,7 @@ class SerialPortAdapter(BareMetalAdapter):
                     "Target filesystem seems to be read-only. "
                     "If your device mounts its filesystem as a disk, "
                     "you may be able to manage it by using the --mount argument."
-                )
+                ) from e
 
         logger.info("Wrote %s in %.1f seconds", path, time.time() - start_time)
 
@@ -827,18 +827,21 @@ class SerialPortAdapter(BareMetalAdapter):
             else:
                 raise
 
-    def _mkdir_via_mount(self, path: str) -> None:
+    def _mkdir_via_mount(self, path: str) -> bool:
         mounted_path = self._internal_path_to_mounted_path(path)
         if not os.path.isdir(mounted_path):
             assert not os.path.exists(mounted_path)
             os.mkdir(mounted_path, 0o755)
+            return True
+        else:
+            return False
 
     def remove_dir_if_empty(self, path: str) -> bool:
         try:
             return super().remove_dir_if_empty(path)
         except ManagementError as e:
             if self._contains_read_only_error(e.out + e.err):
-                self._mkdir_via_mount(path)
+                return self._mkdir_via_mount(path)
             else:
                 raise
 

@@ -97,7 +97,7 @@ def parse_arguments(raw_args: Optional[List[str]] = None) -> Any:
     freeze_parser = subparsers.add_parser(
         "freeze", help="Output installed packages in requirements format."
     )
-    check_parser = subparsers.add_parser(
+    _check_parser = subparsers.add_parser(
         "check", help="Verify installed packages have compatible dependencies."
     )
     download_parser = subparsers.add_parser("download", help="Download packages.")
