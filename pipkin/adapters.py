@@ -163,6 +163,7 @@ class BaseAdapter(Adapter, ABC):
 
     def list_dists(self, paths: List[str] = None) -> Dict[str, Tuple[str, str]]:
         if not paths:
+            # TODO: Consider considering only single directory
             paths = [entry for entry in self.get_sys_path() if entry.startswith("/")]
 
         result = {}
@@ -438,4 +439,5 @@ def create_adapter(port: Optional[str], mount: Optional[str], dir: Optional[str]
     elif mount:
         return MountAdapter(mount)
     else:
+        # TODO: infer the target
         raise NotImplementedError()

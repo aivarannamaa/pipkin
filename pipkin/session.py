@@ -44,6 +44,10 @@ class DistInfo:
 
 
 class Session:
+    """
+    Allows performing several commands in row without releasing the venv.
+    """
+
     def __init__(self, adapter: Adapter):
         self._adapter = adapter
         self._venv_lock: Optional[BaseFileLock] = None
@@ -227,6 +231,9 @@ class Session:
         )
 
     def basic_list(self) -> Set[DistInfo]:
+        """
+        Allows listing without requiring the venv.
+        """
         dists_by_name = self._adapter.list_dists()
         result = set()
         for name in dists_by_name:
