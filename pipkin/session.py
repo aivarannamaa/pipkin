@@ -46,7 +46,8 @@ class DistInfo:
 class Session:
     def __init__(self, adapter: Adapter):
         self._adapter = adapter
-        self._venv_lock, self._venv_dir = self._prepare_venv()
+        self._venv_lock: Optional[BaseFileLock] = None
+        self._venv_dir: Optional[str] = None
         self._quiet = False
 
     def install(
@@ -336,15 +337,17 @@ class Session:
 
     def cache(self, cache_command: str, **_) -> None:
         if cache_command == "purge":
-            shutil.rmtree(self._get_pipkin_cache_dir())
+            if os.path.exists(self._get_pipkin_cache_dir()):
+                shutil.rmtree(self._get_pipkin_cache_dir())
         elif cache_command == "dir":
             print(self._get_pipkin_cache_dir())
         else:
             self._invoke_pip(["cache", cache_command])
 
     def close(self) -> None:
-        # self._clear_venv()
-        self._venv_lock.release()
+        if self._venv_lock is not None:
+            # self._clear_venv()
+            self._venv_lock.release()
 
     def _format_exclusion_args(self, excludes: Optional[List[str]]) -> List[str]:
         args = []
@@ -448,6 +451,12 @@ class Session:
         assert source_path.endswith(".py"), f"Source path: {source_path}"
         return source_path[: -len(".py")] + ".mpy"
 
+    def _ensure_venv(self) -> None:
+        if self._venv_lock is not None:
+            return
+
+        self._venv_lock, self._venv_dir = self._prepare_venv()
+
     def _prepare_venv(self) -> Tuple[BaseFileLock, str]:
         # 1. create sample venv (if it doesn't exist yet)
         # 2. clone the venv for this session (Too slow in Windows ???)
@@ -503,6 +512,8 @@ class Session:
 
     def _populate_venv(self, paths: Optional[List[str]] = None, user: bool = False) -> None:
         """paths and user should be used only with list and freeze commands"""
+        self._ensure_venv()
+        # TODO: try to re-use the state from the previous command executed in the same session.
         assert not (paths and user)
         if user:
             effective_paths = [self._adapter.get_user_packages_path()]
