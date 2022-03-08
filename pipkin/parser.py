@@ -67,12 +67,12 @@ def parse_arguments(raw_args: Optional[List[str]] = None) -> Any:
         help="Directory in the local filesystem",
         metavar="<path>",
     )
-    connection_exclusive_group.add_argument(
-        "-e",
-        "--exe",
-        help="Interpreter executable (Unix or Windows port)",
-        metavar="<path>",
-    )
+    # connection_exclusive_group.add_argument(
+    #     "-e",
+    #     "--exe",
+    #     help="Interpreter executable (Unix or Windows port)",
+    #     metavar="<path>",
+    # )
 
     # sub-parsers
     subparsers = main_parser.add_subparsers(
@@ -191,19 +191,19 @@ def parse_arguments(raw_args: Optional[List[str]] = None) -> Any:
         )
 
     for parser in [list_parser, freeze_parser]:
-        parser.add_argument(
-            "--user",
-            help="Only output packages installed in user-site. Relevant with Unix and Windows ports",
-            action="store_true",
-        )
-        parser.add_argument(
-            "--path",
-            help="Restrict to the specified installation path for listing packages.",
-            nargs="*",
-            dest="paths",
-            metavar="<path>",
-            default=[],
-        )
+        # parser.add_argument(
+        #     "--user",
+        #     help="Only output packages installed in user-site. Relevant with Unix and Windows ports",
+        #     action="store_true",
+        # )
+        # parser.add_argument(
+        #     "--path",
+        #     help="Restrict to the specified installation path for listing packages.",
+        #     nargs="*",
+        #     dest="paths",
+        #     metavar="<path>",
+        #     default=[],
+        # )
         parser.add_argument(
             "--exclude",
             help="Exclude specified package from the output.",
@@ -213,18 +213,18 @@ def parse_arguments(raw_args: Optional[List[str]] = None) -> Any:
             default=[],
         )
 
-    install_parser.add_argument(
-        "-t",
-        "--target",
-        help="Target directory in the target filesystem (eg. /lib)",
-        metavar="<dir>",
-    )
-    install_parser.add_argument(
-        "--user",
-        help="Install to the Python user install directory for target platform. "
-        "Only relevant with Unix and Windows ports",
-        action="store_true",
-    )
+    # install_parser.add_argument(
+    #     "-t",
+    #     "--target",
+    #     help="Target directory in the target filesystem (eg. /lib)",
+    #     metavar="<dir>",
+    # )
+    # install_parser.add_argument(
+    #     "--user",
+    #     help="Install to the Python user install directory for target platform. "
+    #     "Only relevant with Unix and Windows ports",
+    #     action="store_true",
+    # )
     install_parser.add_argument(
         "-U",
         "--upgrade",
