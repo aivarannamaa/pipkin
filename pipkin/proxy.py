@@ -155,7 +155,7 @@ class PipkinProxy(HTTPServer):
         self._downloaders.append(SimpleIndexDownloader(index_url or PYPI_SIMPLE_INDEX))
         for url in extra_index_urls:
             self._downloaders.append(SimpleIndexDownloader(url))
-        super().__init__(("", port), PipkinProxyHandler)
+        super().__init__(("127.0.0.1", port), PipkinProxyHandler)
 
     def get_downloader_for_dist(self, dist_name: str) -> Optional[BaseIndexDownloader]:
         if dist_name not in self._downloaders_by_dist_name:
