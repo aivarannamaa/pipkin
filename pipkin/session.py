@@ -472,7 +472,7 @@ class Session:
         if not os.path.exists(path):
             self._report_progress("Preparing working environment ...")
             logger.info("Start preparing working environment at %s ...", path)
-            subprocess.check_output(
+            subprocess.check_call(
                 [
                     sys.executable,
                     "-I",
@@ -484,7 +484,7 @@ class Session:
             )
             logger.info("Done creating venv")
             assert os.path.exists(path)
-            subprocess.check_output(
+            subprocess.check_call(
                 [
                     get_venv_executable(path),
                     "-I",
@@ -663,7 +663,7 @@ class Session:
         env = {key: os.environ[key] for key in os.environ if not key.startswith("PIP_")}
         env["PIP_CACHE_DIR"] = self._get_pipkin_cache_dir()
 
-        subprocess.check_output(pip_cmd, env=env, stdin=subprocess.DEVNULL)
+        subprocess.check_call(pip_cmd, env=env, stdin=subprocess.DEVNULL)
 
     def _compile_with_mpy_cross(
         self, source_path: str, target_path: str, mpy_cross_path: Optional[str]
