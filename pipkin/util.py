@@ -3,7 +3,7 @@ import re
 import subprocess
 import sys
 from logging import getLogger
-from typing import Tuple
+from typing import List, Optional, Set, Tuple
 
 logger = getLogger(__name__)
 
@@ -117,3 +117,36 @@ def is_continuation_byte(byte: int) -> bool:
 
 def normalize_dist_name(name: str) -> str:
     return name.lower().replace("-", "_")
+
+
+def list_volumes(skip_letters: Optional[Set[str]] = None) -> List[str]:
+    skip_letters = skip_letters or set()
+
+    "Adapted from https://github.com/ntoll/uflash/blob/master/uflash.py"
+    if sys.platform == "win32":
+        import ctypes
+
+        #
+        # In certain circumstances, volumes are allocated to USB
+        # storage devices which cause a Windows popup to raise if their
+        # volume contains no media. Wrapping the check in SetErrorMode
+        # with SEM_FAILCRITICALERRORS (1) prevents this popup.
+        #
+        old_mode = ctypes.windll.kernel32.SetErrorMode(1)  # @UndefinedVariable
+        try:
+            volumes = []
+            for disk in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                if disk in skip_letters:
+                    continue
+                path = "{}:\\".format(disk)
+                if os.path.exists(path):
+                    volumes.append(path)
+
+            return volumes
+        finally:
+            ctypes.windll.kernel32.SetErrorMode(old_mode)  # @UndefinedVariable
+    else:
+        # 'posix' means we're on Linux or OSX (Mac).
+        # Call the unix "mount" command to list the mounted volumes.
+        mount_output = subprocess.check_output(["mount"], stdin=subprocess.DEVNULL).splitlines()
+        return [x.split()[2].decode("utf-8") for x in mount_output]
