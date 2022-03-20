@@ -158,6 +158,12 @@ class JsonIndexDownloader(BaseIndexDownloader):
                 raise e
         return result
 
+class MpOrgIndexDownloader(JsonIndexDownloader):
+    def _download_file_urls(self, dist_name) -> Optional[Dict[str, str]]:
+        if not normalize_dist_name(dist_name).startswith("micropython_"):
+            return None
+
+        return super()._download_file_urls(dist_name)
 
 class PipkinProxy(HTTPServer):
     def __init__(
@@ -166,7 +172,7 @@ class PipkinProxy(HTTPServer):
         self._downloaders: List[BaseIndexDownloader] = []
         self._downloaders_by_dist_name: Dict[str, Optional[BaseIndexDownloader]] = {}
         if not no_mp_org:
-            self._downloaders.append(JsonIndexDownloader(MP_ORG_INDEX))
+            self._downloaders.append(MpOrgIndexDownloader(MP_ORG_INDEX))
         self._downloaders.append(SimpleIndexDownloader(index_url or PYPI_SIMPLE_INDEX))
         for url in extra_index_urls:
             self._downloaders.append(SimpleIndexDownloader(url))
