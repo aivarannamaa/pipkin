@@ -138,9 +138,12 @@ pipkin delegates most of its work to our old friend pip. This is the reason it i
 so much functionality.
 
 Both upip-compatibility and support for micropython.org-s
-index is achieved by setting up a temporary local index, which hides these issues from pip.
+index is achieved by using up a temporary local index, which proxies both PyPI (or another specified index)
+and micropython.org/pi and restores missing setup.py for upip-compatible packages.
 
 Non-CPython installation target is achieved by creating and maintaining private working environment (venv).
+(As creating a venv can be slow in Windows, be prepared for longer wait when using pipkin for the first time.)
+
 In the beginning of the session, pipkin collects package metadata from the target (eg. from the /lib directory
 of the device connected over serial) and creates corresponding dummy packages in the working environment.
 Then it starts the temporary local index and invokes venv-s pip aginst it. When pip finishes, it detects the

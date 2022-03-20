@@ -12,4 +12,4 @@ venv\Scripts\mypy pipkin
 
 echo
 echo "running pylint ..."
-venv\Scripts\pylint --msg-template='{abspath}:{line},{column:2d}: {msg} ({symbol})' pipkin
+venv\Scripts\pylint --msg-template="{abspath}:{line},{column:2d}: {msg} ({symbol})" pipkin
