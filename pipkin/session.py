@@ -161,9 +161,7 @@ class Session:
         yes: bool = False,
         **_,
     ):
-        args = ["uninstall"]
-        if yes:
-            args += ["--yes"]
+        args = ["uninstall", "--yes"]
 
         for rf in requirement_files or []:
             args += ["-r", rf]
@@ -177,6 +175,13 @@ class Session:
 
         removed_meta_dirs = {name for name in state_before if name not in state_after}
         if removed_meta_dirs:
+            # NB! If you want to move confirmation back to pip process, then test the process
+            # in Windows via Thonny
+            if not yes:
+                names = [parse_meta_dir_name(d)[0] for d in removed_meta_dirs]
+                if input(f"Proceed removing {', '.join(names)} (Y/n) at target? ").lower() == "n":
+                    return
+
             self._report_progress("Starting to apply changes to the target.")
 
         for meta_dir_name in removed_meta_dirs:
