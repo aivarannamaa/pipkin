@@ -470,6 +470,7 @@ class Session:
     def _prepare_venv(self) -> Tuple[BaseFileLock, str]:
         path = self._compute_venv_path()
         if not os.path.exists(path):
+            self._report_progress("Preparing working environment ...")
             logger.info("Start preparing working environment at %s ...", path)
             subprocess.check_output(
                 [
