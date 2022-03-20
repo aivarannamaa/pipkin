@@ -118,8 +118,8 @@ pipkin install -h
                             If a URL or path to an html file, then parse for links to archives such as sdist (.tar.gz) or wheel (.whl) files. If a local path or
                             file:// URL that's a directory, then look for archives in the directory listing.
 
-Adafruit-Blinka
----------------
+Adafruit-Blinka and co
+----------------------
 `Adafruit-Blinka <https://pypi.org/project/Adafruit-Blinka/>`_ is a compatibility library which allows
 running CircuitPython code with CPython. When publishing CircuitPython libraries at PyPI, Adafruit
 and the community have so far targeted only CPython users, because tools for connecting PyPI with bare metal
@@ -131,6 +131,23 @@ pipkin's current approach is to let its custom index output dummy Adafruit-Blink
 no modules and has no dependencies. This means when you're installing a library which depends on Adafruit-Blinka,
 you'll get Blinka's .dist-info directory with METADATA and RECORD, but nothing else. Let's call it
 an optimized build.
+
+Dummies are returned for all dists, which are currently omitted by
+`adafruit/circuitpython-build-tools <https://github.com/adafruit/circuitpython-build-tools/blob/de44a709f6287d2759df14c89707f2d8f5a026f5/circuitpython_build_tools/scripts/build_bundles.py#L42>`_
+
+Current state and goals
+-----------------------
+Handling packages meant for upip, micropython.org/pi overrides and the problems outlined in the
+previous section, all together make pipkin less elegant and slower than one would like. Still, this is just
+a start. There are several optimizations possible within current approach. Also, PyPI, pip, wheel
+and packaging standards are evolving -- in the future it may become easy to publish separate wheels
+for MicroPython and/or CircuitPython and pip may become usable for "cross-installing" packages for
+other platforms.
+
+Even if clumsy at times, pipkin tries to be the proof-of-concept for demonstrating that even in
+the world of MicroPython and CircuitPython, we could continue publishing standard sdists
+and wheels on PyPI and re-use the familiar approach for package management. While introducing
+new formats and distribution mechanisms have their benefits, there are other options worth considering.
 
 Implementation
 --------------
