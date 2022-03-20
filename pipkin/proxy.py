@@ -158,12 +158,14 @@ class JsonIndexDownloader(BaseIndexDownloader):
                 raise e
         return result
 
+
 class MpOrgIndexDownloader(JsonIndexDownloader):
     def _download_file_urls(self, dist_name) -> Optional[Dict[str, str]]:
         if not normalize_dist_name(dist_name).startswith("micropython_"):
             return None
 
         return super()._download_file_urls(dist_name)
+
 
 class PipkinProxy(HTTPServer):
     def __init__(
@@ -236,7 +238,7 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
     def _serve_file(self, dist_name: str, file_name: str):
         logger.debug("Serving %s for %s", file_name, dist_name)
 
-        if normalize_dist_name(dist_name) in NORMALIZED_IRRELEVANT_PACKAGE_NAMES:
+        if self._should_return_dummy(dist_name):
             tweaked_bytes = create_dummy_dist(dist_name, file_name)
         else:
             original_bytes = self._download_file(dist_name, file_name)
@@ -265,6 +267,13 @@ class PipkinProxyHandler(BaseHTTPRequestHandler):
         with urlopen(url) as result:
             logger.debug("Headers: %r", result.headers.items())
             return result.read()
+
+    def _should_return_dummy(self, dist_name: str) -> bool:
+        return normalize_dist_name(
+            dist_name
+        ) in NORMALIZED_IRRELEVANT_PACKAGE_NAMES or normalize_dist_name(dist_name).startswith(
+            "adafruit_blinka_"
+        )
 
     def _tweak_file(self, dist_name: str, file_name: str, original_bytes: bytes) -> bytes:
         if not file_name.lower().endswith(".tar.gz"):
