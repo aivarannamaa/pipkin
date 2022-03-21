@@ -10,7 +10,7 @@ from pipkin.session import Session
 
 logger = logging.getLogger("pipkin")
 
-__version__ = "1.0b1"
+__version__ = "1.0b2"
 
 
 def error(msg):
