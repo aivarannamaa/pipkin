@@ -127,7 +127,7 @@ CircuitPython did not exist (or because at the moment it is not clear how to pub
 which can't run pip themselves). Therefore the CircuitPython libraries at PyPI usually have Adafruit-Blinka
 dependency, which is not relevant (and would even cause problems) on bare metal CircuitPython devices.
 
-pipkin's current approach is to let its custom index output dummy Adafruit-Blinka distribution, which contains
+pipkin's current approach is to have its proxy-index return dummy Adafruit-Blinka distribution, which contains
 no modules and has no dependencies. This means when you're installing a library which depends on Adafruit-Blinka,
 you'll get Blinka's .dist-info directory with METADATA and RECORD, but nothing else. Let's call it
 an optimized build.
