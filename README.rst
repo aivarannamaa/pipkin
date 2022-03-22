@@ -147,7 +147,8 @@ other platforms.
 Even if clumsy at times, pipkin tries to be the proof-of-concept for demonstrating that even in
 the world of MicroPython and CircuitPython, we could continue publishing standard sdists
 and wheels on PyPI and re-use the familiar approach for package management. While introducing
-new formats and distribution mechanisms have their benefits, there are other options worth considering.
+new formats and distribution mechanisms have their benefits, we shouldn't dismiss the standard approach
+yet.
 
 Implementation
 --------------
