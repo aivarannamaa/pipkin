@@ -169,14 +169,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
 
         hex_mode = self._should_hexlify(path)
 
-        open_script = dedent(
-            f"""
-            try:
-                __pipkin_fp = __pipkin_helper.builtins.open({path!r}, 'rb')
-            except OSError as e:
-                print(e)
-        """
-        )
+        open_script = f"__pipkin_fp = __pipkin_helper.builtins.open({path!r}, 'rb')"
         out, err = self._execute_and_capture_output(open_script)
 
         if (out + err).strip():
@@ -228,10 +221,11 @@ class BareMetalAdapter(BaseAdapter, ABC):
             dedent(
                 f"""
             try:
-                __pipkin_helper.os.remove({path!r})
-            except OSError as e:
-                if e.errno not in [{errno.ENOENT}, {errno.ENODEV}]:
-                    raise
+                __pipkin_helper.os.stat({path!r})
+            except __pipkin_helper.builtins.OSError:
+                pass
+            else:
+                __pipkin_helper.os.remove({path!r})            
         """
             )
         )
@@ -254,10 +248,9 @@ class BareMetalAdapter(BaseAdapter, ABC):
             dedent(
                 f"""
             try:
+                __pipkin_helper.os.stat({path!r})
+            except __pipkin_helper.builtins.OSError:
                 __pipkin_helper.os.mkdir({path!r})
-            except __pipkin_helper.builtins.OSError as e:
-                if e.errno != {errno.EEXIST}:
-                    raise
         """
             )
         )
@@ -277,11 +270,8 @@ class BareMetalAdapter(BaseAdapter, ABC):
                     in __pipkin_helper.os.listdir({path!r}) 
                     if name.endswith('.dist-info') {dist_name_condition}
                 ])
-            except OSError as e:
-                if e.errno in [{errno.ENODEV}, {errno.ENOENT}]:
-                    __pipkin_helper.print_mgmt_value([])
-                else:
-                    raise
+            except __pipkin_helper.builtins.OSError as e:
+                __pipkin_helper.print_mgmt_value([])
 """
             )
         )
@@ -699,16 +689,14 @@ class SerialPortAdapter(BareMetalAdapter):
 
         assert bytes_written == len(content)
 
-    def _write_file_via_serial(self, target_path: str, content: bytes) -> None:
+    def _write_file_via_serial(self, target_path: str, content: bytes,
+                               can_hexlify:bool=True) -> None:
         out, err = self._execute_and_capture_output(
             dedent(
                 """
-            try:
                 __pipkin_path = '{path}'
                 __pipkin_written = 0
                 __pipkin_fp = __pipkin_helper.builtins.open(__pipkin_path, 'wb')
-            except __pipkin_helper.builtins.Exception as e:
-                __pipkin_helper.builtins.print(__pipkin_helper.builtins.str(e))
             """
             ).format(path=target_path),
         )
