@@ -718,8 +718,9 @@ class SerialPortAdapter(BareMetalAdapter):
 
         assert bytes_written == len(content)
 
-    def _write_file_via_serial(self, target_path: str, content: bytes,
-                               can_hexlify:bool=True) -> None:
+    def _write_file_via_serial(
+        self, target_path: str, content: bytes, can_hexlify: bool = True
+    ) -> None:
         out, err = self._execute_and_capture_output(
             dedent(
                 """
