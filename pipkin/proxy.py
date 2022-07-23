@@ -56,8 +56,11 @@ NORMALIZED_IRRELEVANT_PACKAGE_NAMES = {
     "adafruit_blinka_displayio",
     "adafruit_blinka_pyportal",
     "adafruit_python_extended_bus",
+    "numpy",
+    "pillow",
+    "pyasin1",
     "pyserial",
-    "adafruit_circuitpython_busdevice",
+    "scipy",
 }
 
 # For efficient caching it's better if the proxy always runs at the same port
