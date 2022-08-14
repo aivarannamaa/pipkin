@@ -2,6 +2,10 @@
 Version history
 ===============
 
+1.0b4 (2022-08-14)
+==================
+* Take OSC sequences into account when parsing bare metal output
+
 1.0b3 (2022-04-10)
 ==================
 * Fix file operations for CircuitPython boards used over serial
