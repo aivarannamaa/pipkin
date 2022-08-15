@@ -505,6 +505,7 @@ class Session:
                 ],
                 stdin=subprocess.DEVNULL,
             )
+            self._patch_pip(path)
             logger.info("Done preparing working environment.")
         else:
             logger.debug("Using existing working environment at %s", path)
@@ -523,6 +524,48 @@ class Session:
 
     def _get_venv_site_packages_path(self) -> str:
         return get_venv_site_packages_path(self._venv_dir)
+
+    def _patch_pip(self, venv_path: str) -> None:
+
+        "-c" "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+
+        site_packages_path = subprocess.check_output(
+            [
+                get_venv_executable(venv_path),
+                "-c",
+                "import sysconfig; print(sysconfig.get_paths()['purelib'])",
+            ],
+            stdin=subprocess.DEVNULL,
+            universal_newlines=True,
+        ).strip()
+
+        pip_init_path = os.path.join(site_packages_path, "pip", "__init__.py")
+
+        patch = """
+import os
+import pip._vendor.packaging.markers
+import pip._vendor.distlib.markers
+
+ENV_VAR_PREFIX = "pip_marker_"
+
+def patch_context_function(fun):
+    def patched_context_function():
+        context = fun()
+
+        for name in os.environ:
+            if name.startswith(ENV_VAR_PREFIX):
+                marker_name = name[len(ENV_VAR_PREFIX):]
+                value =  os.environ[name]
+                context[marker_name] = value
+
+        return context
+
+patch_context_function(pip._vendor.packaging.markers.default_environment)
+patch_context_function(pip._vendor.distlib.markers.default_context)        
+
+"""
+        with open(pip_init_path, "a", encoding="utf-8") as fp:
+            fp.write(patch)
 
     def _clear_venv(self) -> None:
         sp_path = self._get_venv_site_packages_path()
