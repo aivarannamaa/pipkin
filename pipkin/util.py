@@ -4,6 +4,7 @@ import subprocess
 import sys
 from logging import getLogger
 from typing import List, Optional, Set, Tuple
+from wheel_filename import parse_wheel_filename
 
 logger = getLogger(__name__)
 
@@ -86,7 +87,12 @@ def parse_meta_dir_name(name: str) -> Tuple[str, str]:
 
 def parse_dist_file_name(file_name: str) -> Tuple[str, str, str]:
     file_name = file_name.lower()
-    for suffix in [".zip", ".whl", ".tar.gz"]:
+
+    if file_name.endswith(".whl"):
+        pwf = parse_wheel_filename(file_name)
+        return pwf.project, pwf.version, ".whl"
+
+    for suffix in [".zip", ".tar.gz"]:
         if file_name.endswith(suffix):
             file_name = file_name[: -len(suffix)]
             break
