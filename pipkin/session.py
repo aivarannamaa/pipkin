@@ -477,32 +477,36 @@ class Session:
         if not os.path.exists(path):
             self._report_progress("Preparing working environment ...")
             logger.info("Start preparing working environment at %s ...", path)
+            venv_cmd = [
+                sys.executable,
+                "-I",
+                "-m",
+                "venv",
+                path,
+            ]
             subprocess.check_call(
-                [
-                    sys.executable,
-                    "-I",
-                    "-m",
-                    "venv",
-                    path,
-                ],
+                venv_cmd,
+                executable=venv_cmd[0],
                 stdin=subprocess.DEVNULL,
             )
             logger.info("Done creating venv")
             assert os.path.exists(path)
+            pip_cmd = [
+                get_venv_executable(path),
+                "-I",
+                "-m",
+                "pip",
+                "--disable-pip-version-check",
+                "install",
+                "--no-warn-script-location",
+                "--upgrade",
+                "pip==22.2.2",
+                "setuptools==60.9.3",
+                "wheel==0.37.1",
+            ]
             subprocess.check_call(
-                [
-                    get_venv_executable(path),
-                    "-I",
-                    "-m",
-                    "pip",
-                    "--disable-pip-version-check",
-                    "install",
-                    "--no-warn-script-location",
-                    "--upgrade",
-                    "pip==22.0.*",
-                    "setuptools==60.9.*",
-                    "wheel==0.37.*",
-                ],
+                pip_cmd,
+                executable=pip_cmd[0],
                 stdin=subprocess.DEVNULL,
             )
             self._patch_pip(path)
@@ -526,15 +530,14 @@ class Session:
         return get_venv_site_packages_path(self._venv_dir)
 
     def _patch_pip(self, venv_path: str) -> None:
-
-        "-c" "import sysconfig; print(sysconfig.get_paths()['purelib'])"
-
+        sp_cmd = [
+            get_venv_executable(venv_path),
+            "-c",
+            "import sysconfig; print(sysconfig.get_paths()['purelib'])",
+        ]
         site_packages_path = subprocess.check_output(
-            [
-                get_venv_executable(venv_path),
-                "-c",
-                "import sysconfig; print(sysconfig.get_paths()['purelib'])",
-            ],
+            sp_cmd,
+            executable=sp_cmd[0],
             stdin=subprocess.DEVNULL,
             universal_newlines=True,
         ).strip()
@@ -548,22 +551,29 @@ import pip._vendor.distlib.markers
 
 ENV_VAR_PREFIX = "pip_marker_"
 
+def patch_context(context):
+    for name in os.environ:
+        if name.startswith(ENV_VAR_PREFIX):
+            marker_name = name[len(ENV_VAR_PREFIX):]
+            value =  os.environ[name]
+            context[marker_name] = value
+
+
 def patch_context_function(fun):
     def patched_context_function():
         context = fun()
-
-        for name in os.environ:
-            if name.startswith(ENV_VAR_PREFIX):
-                marker_name = name[len(ENV_VAR_PREFIX):]
-                value =  os.environ[name]
-                context[marker_name] = value
-
+        patch_context(context)
         return context
+    
+    return patched_context_function
 
-patch_context_function(pip._vendor.packaging.markers.default_environment)
-patch_context_function(pip._vendor.distlib.markers.default_context)        
+pip._vendor.packaging.markers.default_environment = \
+    patch_context_function(pip._vendor.packaging.markers.default_environment)
+pip._vendor.distlib.markers.DEFAULT_CONTEXT = \
+    patch_context(pip._vendor.distlib.markers.DEFAULT_CONTEXT)        
 
 """
+        logger.info("Patching %r", pip_init_path)
         with open(pip_init_path, "a", encoding="utf-8") as fp:
             fp.write(patch)
 
@@ -711,7 +721,7 @@ patch_context_function(pip._vendor.distlib.markers.default_context)
         env = {key: os.environ[key] for key in os.environ if not key.startswith("PIP_")}
         env["PIP_CACHE_DIR"] = self._get_pipkin_cache_dir()
 
-        subprocess.check_call(pip_cmd, env=env, stdin=subprocess.DEVNULL)
+        subprocess.check_call(pip_cmd, executable=pip_cmd[0], env=env, stdin=subprocess.DEVNULL)
 
     def _compile_with_mpy_cross(
         self, source_path: str, target_path: str, mpy_cross_path: Optional[str]
@@ -725,7 +735,7 @@ patch_context_function(pip._vendor.distlib.markers.default_context)
         args = (
             [mpy_cross_path] + self._adapter.get_mpy_cross_args() + ["-o", target_path, source_path]
         )
-        subprocess.check_call(args)
+        subprocess.check_call(args, executable=args[0], stdin=subprocess.DEVNULL)
 
     def _ensure_mpy_cross(self) -> str:
         impl_name, ver_prefix = self._adapter.get_implementation_name_and_version_prefix()

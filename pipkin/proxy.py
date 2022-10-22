@@ -508,7 +508,7 @@ def create_dummy_dist(dist_name: str, file_name: str) -> bytes:
             raise AssertionError("Unexpected suffix " + suffix)
 
         args = [sys.executable, setup_py_path] + setup_py_args
-        subprocess.check_call(args, cwd=tmp, stdin=subprocess.DEVNULL)
+        subprocess.check_call(args, executable=args[0], cwd=tmp, stdin=subprocess.DEVNULL)
 
         dist_dir = os.path.join(tmp, "dist")
         dist_files = os.listdir(dist_dir)

@@ -2,6 +2,11 @@
 Version history
 ===============
 
+1.0b5 (2022-10-22)
+==================
+* Fix wheel name parsing, #1, by @surdouski
+* Experiment with different style of creating subprocess
+
 1.0b4 (2022-08-14)
 ==================
 * Take OSC sequences into account when parsing bare metal output

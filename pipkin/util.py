@@ -105,12 +105,14 @@ def get_venv_executable(path: str) -> str:
 
 def get_venv_site_packages_path(venv_path: str) -> str:
     logger.debug("Querying site packages path for %s", venv_path)
+    args = [
+        get_venv_executable(venv_path),
+        "-c",
+        "import site; print([p for p in site.getsitepackages() if 'site-packages' in p][0])",
+    ]
     result = subprocess.check_output(
-        [
-            get_venv_executable(venv_path),
-            "-c",
-            "import site; print([p for p in site.getsitepackages() if 'site-packages' in p][0])",
-        ],
+        args,
+        executable=args[0],
         text=True,
         stdin=subprocess.DEVNULL,
     ).strip()
