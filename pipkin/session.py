@@ -352,9 +352,12 @@ class Session:
         if cache_command == "purge":
             if os.path.exists(self._get_pipkin_cache_dir()):
                 shutil.rmtree(self._get_pipkin_cache_dir())
+        elif not os.path.exists(self._get_pipkin_cache_dir()):
+            print(f"Cache dir ({self._get_pipkin_cache_dir()}) not created yet")
         elif cache_command == "dir":
             print(self._get_pipkin_cache_dir())
         else:
+            self._ensure_venv()
             self._invoke_pip(["cache", cache_command])
 
     def close(self) -> None:

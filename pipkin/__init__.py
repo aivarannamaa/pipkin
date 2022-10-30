@@ -4,7 +4,7 @@ import sys
 import traceback
 from typing import List, Optional
 
-from pipkin.adapters import create_adapter
+from pipkin.adapters import Adapter, DummyAdapter, create_adapter
 from pipkin.common import ManagementError, UserError
 from pipkin.session import Session
 
@@ -41,7 +41,11 @@ def main(raw_args: Optional[List[str]] = None) -> int:
     args_dict = vars(args)
 
     try:
-        adapter = create_adapter(**args_dict)
+        adapter: Adapter
+        if args.command == "cache":
+            adapter = DummyAdapter()
+        else:
+            adapter = create_adapter(**args_dict)
         session = Session(adapter)
         try:
             command_handler = getattr(session, args.command)
