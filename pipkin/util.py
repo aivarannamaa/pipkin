@@ -164,7 +164,8 @@ def is_continuation_byte(byte: int) -> bool:
 
 
 def normalize_dist_name(name: str) -> str:
-    return name.lower().replace("-", "_")
+    # https://peps.python.org/pep-0503/#normalized-names
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def list_volumes(skip_letters: Optional[Set[str]] = None) -> List[str]:
