@@ -2,6 +2,10 @@
 Version history
 ===============
 
+1.0b6 (2022-10-30)
+==================
+* Fix the problem with distribution names containing period, #4
+
 1.0b5 (2022-10-22)
 ==================
 * Fix wheel name parsing, #1, by @surdouski
