@@ -504,8 +504,8 @@ class Session:
                 "--no-warn-script-location",
                 "--upgrade",
                 "pip==22.2.2",
-                "setuptools==60.9.3",
-                "wheel==0.37.1",
+                "setuptools==65.4.1",
+                "wheel==0.38.4",
             ]
             subprocess.check_call(
                 pip_cmd,
