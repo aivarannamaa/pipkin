@@ -7,6 +7,4 @@ python setup.py bdist_wheel
 @echo ............... CREATING sdist ................................
 python setup.py sdist --formats=gztar
 
-cd packaging\setuptools
-
 rmdir pipkin.egg-info /s /q

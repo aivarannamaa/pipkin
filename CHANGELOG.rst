@@ -2,6 +2,12 @@
 Version history
 ===============
 
+1.0b7 (2022-12-30)
+==================
+* Optimize and enhance `cache` command
+* Add extra debug logging
+* Upgrade `wheel` and `setuptools`
+
 1.0b6 (2022-10-30)
 ==================
 * Fix the problem with distribution names containing period, #4
