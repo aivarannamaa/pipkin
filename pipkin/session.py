@@ -586,10 +586,13 @@ pip._vendor.distlib.markers.DEFAULT_CONTEXT = \
         for name in os.listdir(sp_path):
             full_path = os.path.join(sp_path, name)
             if self._is_initial_venv_item(name):
+                logger.debug("skipping %r", name)
                 continue
             elif os.path.isfile(full_path):
+                logger.debug("removing file %r", name)
                 os.remove(full_path)
             else:
+                logger.debug("removing directory %r", name)
                 assert os.path.isdir(full_path)
                 shutil.rmtree(full_path)
 
