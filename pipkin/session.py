@@ -110,7 +110,11 @@ class Session:
         state_after = self._get_venv_state()
 
         removed_meta_dirs = {name for name in state_before if name not in state_after}
-        assert not removed_meta_dirs
+        # removed meta dirs are expected when upgrading
+        for meta_dir_name in removed_meta_dirs:
+            self._report_progress(f"Removing {parse_meta_dir_name(meta_dir_name)[0]}")
+            dist_name, _version = parse_meta_dir_name(meta_dir_name)
+            self._adapter.remove_dist(dist_name)
 
         new_meta_dirs = {name for name in state_after if name not in state_before}
         changed_meta_dirs = {
