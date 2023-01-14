@@ -2,7 +2,7 @@
 Version history
 ===============
 
-1.0b8 (2023-01-??)
+1.0b8 (2023-01-14)
 ==================
 * Fix AssertionError when upgrading a package
 
