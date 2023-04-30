@@ -173,9 +173,9 @@ def is_continuation_byte(byte: int) -> bool:
     return (byte & 0b11000000) == 0b10000000
 
 
-def normalize_dist_name(name: str) -> str:
+def custom_normalize_dist_name(name: str) -> str:
     # https://peps.python.org/pep-0503/#normalized-names
-    return pkg_resources.safe_name(name)
+    return pkg_resources.safe_name(name).lower().replace("-", "_").replace(".", "_")
 
 
 def list_volumes(skip_letters: Optional[Set[str]] = None) -> List[str]:

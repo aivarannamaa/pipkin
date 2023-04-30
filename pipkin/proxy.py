@@ -47,7 +47,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
-from pipkin.util import create_dist_info_version_name, normalize_dist_name, parse_dist_file_name
+from pkg_resources import safe_name, safe_version
+
+from pipkin.util import (
+    create_dist_info_version_name,
+    custom_normalize_dist_name,
+    parse_dist_file_name,
+)
 
 MP_ORG_INDEX_V2 = "https://micropython.org/pi/v2"
 PYPI_SIMPLE_INDEX = "https://pypi.org/simple"
@@ -201,7 +207,9 @@ class SimpleIndexDownloader(BaseIndexDownloader):
                 assert info.isdir()
                 wrapper_dir, rel_name = info.name, ""
 
-            assert normalize_dist_name(wrapper_dir).startswith(normalize_dist_name(dist_name))
+            assert custom_normalize_dist_name(wrapper_dir).startswith(
+                custom_normalize_dist_name(dist_name)
+            )
 
             rel_name = rel_name.strip("/")
             rel_segments = rel_name.split("/")
@@ -286,9 +294,11 @@ tag_date = 0
         tar.addfile(info, stream)
 
     def _should_return_dummy(self, dist_name: str) -> bool:
-        return normalize_dist_name(
+        return custom_normalize_dist_name(
             dist_name
-        ) in NORMALIZED_IRRELEVANT_PACKAGE_NAMES or normalize_dist_name(dist_name).startswith(
+        ) in NORMALIZED_IRRELEVANT_PACKAGE_NAMES or custom_normalize_dist_name(
+            dist_name
+        ).startswith(
             "adafruit_blinka_"
         )
 
@@ -362,24 +372,26 @@ class MpOrgV2IndexDownloader(BaseIndexDownloader):
             return None
 
         # Collect relationship between version and constructed file names so that I won't need to parse file name later.
-        meta["versions_per_file_name"] = {}
+        meta["original_versions_per_file_name"] = {}
 
         result = []
         for version in meta["versions"]["py"]:
             file_name = create_dist_info_version_name(dist_name, version) + "-py3-none-any.whl"
-            meta["versions_per_file_name"][file_name] = version
+            meta["original_versions_per_file_name"][file_name] = version
             result.append(file_name)
 
         return result
 
     def get_file_content(self, dist_name: str, file_name: str) -> bytes:
         dist_meta = self._get_dist_metadata(dist_name)
-        versions = dist_meta.get("versions_per_file_name", None)
-        assert isinstance(versions, dict)
-        version = versions.get(file_name, None)
-        assert isinstance(version, str)
+        original_name = dist_meta["name"]
 
-        version_meta_url = f"{self._index_url}/package/py/{dist_name}/{version}.json"
+        original_versions = dist_meta.get("original_versions_per_file_name", None)
+        assert isinstance(original_versions, dict)
+        original_version = original_versions.get(file_name, None)
+        assert isinstance(original_version, str)
+
+        version_meta_url = f"{self._index_url}/package/py/{original_name}/{original_version}.json"
         with urlopen(version_meta_url) as fp:
             version_meta = json.load(fp)
 
@@ -411,8 +423,8 @@ class MpOrgV2IndexDownloader(BaseIndexDownloader):
         metadata = textwrap.dedent(
             f"""
             Metadata-Version: 2.1
-            Name: {dist_meta["name"]}
-            Version: {version_meta["version"]}
+            Name: {safe_name(dist_meta["name"])}
+            Version: {safe_version(version_meta["version"])}
             Summary: {summary}
             Author: {dist_meta.get("author", "")}
             License: {dist_meta.get("license", "")}
@@ -471,7 +483,7 @@ class MpOrgV2IndexDownloader(BaseIndexDownloader):
                 self._packages = json.load(fp)["packages"]
 
         for package in self._packages:
-            if package["name"] == dist_name:  # TODO: normalize?
+            if custom_normalize_dist_name(package["name"]) == custom_normalize_dist_name(dist_name):
                 return package
 
         return None
@@ -594,7 +606,7 @@ def start_proxy(
 def create_dummy_dist(dist_name: str, file_name: str) -> bytes:
     logger.info("Creating dummy content for %s", file_name)
     parsed_dist_name, version, suffix = parse_dist_file_name(file_name)
-    assert normalize_dist_name(dist_name) == normalize_dist_name(parsed_dist_name)
+    assert custom_normalize_dist_name(dist_name) == custom_normalize_dist_name(parsed_dist_name)
 
     with tempfile.TemporaryDirectory(prefix="pipkin-proxy") as tmp:
         setup_py_path = os.path.join(tmp, "setup.py")
