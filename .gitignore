@@ -6,3 +6,4 @@ venv
 temp_venv
 out
 __pycache__
+.DS_Store
