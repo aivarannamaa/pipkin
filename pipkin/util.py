@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import List, Optional, Set, Tuple
 
+import pkg_resources
+
 logger = getLogger(__name__)
 
 
@@ -47,6 +49,14 @@ def parse_wheel_filename(filename: str) -> ParsedWheelFilename:
         abi_tags=m.group("abi_tags").split("."),
         platform_tags=m.group("platform_tags").split("."),
     )
+
+
+def create_dist_info_version_name(dist_name: str, version: str) -> str:
+    # https://packaging.python.org/en/latest/specifications/binary-distribution-format/#escaping-and-unicode
+    # https://peps.python.org/pep-0440/
+    safe_name = pkg_resources.safe_name(dist_name).replace("-", "_")
+    safe_version = pkg_resources.safe_version(version)
+    return f"{safe_name}-{safe_version}"
 
 
 def get_windows_folder(ID: int) -> str:
@@ -165,7 +175,7 @@ def is_continuation_byte(byte: int) -> bool:
 
 def normalize_dist_name(name: str) -> str:
     # https://peps.python.org/pep-0503/#normalized-names
-    return re.sub(r"[-_.]+", "-", name).lower()
+    return pkg_resources.safe_name(name)
 
 
 def list_volumes(skip_letters: Optional[Set[str]] = None) -> List[str]:
