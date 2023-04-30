@@ -96,7 +96,6 @@ class BareMetalAdapter(BaseAdapter, ABC):
         write_block_size: Optional[int] = None,
         write_block_delay: Optional[float] = None,
     ) -> Tuple[str, int, float]:
-
         if submit_mode is None:
             submit_mode = RAW_PASTE_SUBMIT_MODE
 
@@ -194,7 +193,6 @@ class BareMetalAdapter(BaseAdapter, ABC):
         return None
 
     def read_file(self, path: str) -> bytes:
-
         hex_mode = self._should_hexlify(path)
 
         open_script = f"__pipkin_fp = __pipkin_helper.builtins.open({path!r}, 'rb')"
@@ -523,7 +521,6 @@ class BareMetalAdapter(BaseAdapter, ABC):
         output_consumer: OutputConsumer,
         timeout: float,
     ):
-
         PROMPT_MARKERS = [NORMAL_PROMPT, EOT + RAW_PROMPT, FIRST_RAW_PROMPT]
         PROMPT_MARKERS_RE = re.compile(
             b"|".join(

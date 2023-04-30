@@ -213,7 +213,6 @@ class Session:
         excludes: Optional[List[str]] = None,
         **_,
     ):
-
         args = ["list"]
 
         if outdated:
@@ -264,7 +263,6 @@ class Session:
         excludes: Optional[List[str]] = None,
         **_,
     ):
-
         args = ["freeze"]
 
         args += self._format_exclusion_args(excludes)
@@ -698,7 +696,6 @@ pip._vendor.distlib.markers.DEFAULT_CONTEXT = \
         no_index: bool,
         find_links: Optional[str],
     ):
-
         if no_index:
             assert find_links
             self._invoke_pip(pip_args + ["--no-index", "--find-links", find_links])
