@@ -496,7 +496,7 @@ class BareMetalAdapter(BaseAdapter, ABC):
         self._write(NORMAL_MODE_CMD)
         self._log_output_until_active_prompt()
         assert self._last_prompt == NORMAL_PROMPT, (
-            "Could not get normal prompt, got %s" % self._last_prompt
+            "Could not get normal prompt, got %r" % self._last_prompt
         )
 
     def _log_output_until_active_prompt(self, timeout: float = WAIT_OR_CRASH_TIMEOUT) -> None:
