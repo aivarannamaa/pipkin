@@ -2,7 +2,7 @@ pipkin
 =======
 Tool for managing distribution packages for MicroPython and CircuitPython on target devices or in a local directory.
 
-Supports both `upip-compatible packages <https://docs.micropython.org/en/latest/reference/packages.html>`_,
+Supports `mip- and upip-compatible packages <https://docs.micropython.org/en/latest/reference/packages.html>`_,
 and regular pip-compatible packages.
 
 By default it prefers micrpython-lib packages at https://micropython.org/pi/v2/index.json. If the package is not
