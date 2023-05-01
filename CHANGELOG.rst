@@ -2,6 +2,10 @@
 Version history
 ===============
 
+2.0b1 (2023-05-01)
+==================
+* Support micropython-lib index v2, #5
+
 1.0b8 (2023-01-14)
 ==================
 * Fix AssertionError when upgrading a package
