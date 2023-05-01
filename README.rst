@@ -5,7 +5,7 @@ Tool for managing distribution packages for MicroPython and CircuitPython on tar
 Supports both `upip-compatible packages <https://docs.micropython.org/en/latest/reference/packages.html>`_,
 and regular pip-compatible packages.
 
-By default it prefers packages at micropython.org-s index. If the package or the required version is not
+By default it prefers micrpython-lib packages at https://micropython.org/pi/v2/index.json. If the package or the required version is not
 found there, then it turns to PyPI.
 
 Unlike some of the package managers for MicroPython and CircuitPython, pipkin keeps a minimal set of package
