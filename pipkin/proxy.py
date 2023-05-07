@@ -634,10 +634,16 @@ def start_proxy(
     index_url: Optional[str],
     extra_index_urls: List[str],
 ) -> PipkinProxy:
+    port = PREFERRED_PORT
+    if no_mp_org:
+        # Use different port for different set of source indexes, otherwise
+        # pip may use wrong cached wheel.
+        port += 7
     try:
-        proxy = PipkinProxy(no_mp_org, index_url, extra_index_urls, PREFERRED_PORT)
+        proxy = PipkinProxy(no_mp_org, index_url, extra_index_urls, port)
     except OSError as e:
         if e.errno == errno.EADDRINUSE:
+            logger.warning("Port %s was in use. Letting OS choose.", port)
             proxy = PipkinProxy(no_mp_org, index_url, extra_index_urls, 0)
         else:
             raise e
