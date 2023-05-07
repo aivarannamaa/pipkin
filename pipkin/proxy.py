@@ -38,7 +38,7 @@ import tempfile
 import textwrap
 import threading
 import zipfile
-from abc import ABC
+from abc import ABC, abstractmethod
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import BaseServer
@@ -113,9 +113,11 @@ class BaseIndexDownloader(ABC):
     def __init__(self, index_url: str):
         self._index_url = index_url.rstrip("/")
 
+    @abstractmethod
     def get_dist_file_names(self, dist_name: str) -> Optional[List[str]]:
         raise NotImplementedError()
 
+    @abstractmethod
     def get_file_content(self, dist_name: str, file_name: str) -> bytes:
         raise NotImplementedError()
 
@@ -146,6 +148,10 @@ class RegularIndexDownloader(BaseIndexDownloader, ABC):
             self._dist_urls_cache[dist_name] = self._download_file_urls(dist_name)
 
         return self._dist_urls_cache[dist_name]
+
+    @abstractmethod
+    def _download_file_urls(self, dist_name) -> Optional[Dict[str, str]]:
+        raise NotImplementedError()
 
     def _download_file(self, dist_name: str, file_name: str) -> bytes:
         urls = self._get_dist_urls(dist_name)
