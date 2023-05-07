@@ -2,6 +2,11 @@
 Version history
 ===============
 
+2.0b2 (2023-05-07)
+==================
+* Restore support for old micropython.org index
+* Use different proxy port with --no-mp-org (to avoid pip taking the wrong wheel from the cache)
+
 2.0b1 (2023-05-01)
 ==================
 * Support micropython-lib index v2, #5
