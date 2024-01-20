@@ -1,5 +1,5 @@
 {
-  "7.0": {
+  "7.0" : {
     "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross.static-x64-windows-7.0.0.exe",
     "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.0.0",
     "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.0.0",
@@ -9,7 +9,7 @@
     "linux-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross.static-aarch64-7.0.0",
     "linux-armv7l" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-raspbian/mpy-cross.static-raspbian-7.0.0"
   },
-  "7.1": {
+  "7.1" : {
     "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross.static-x64-windows-7.1.1.exe",
     "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.1.1",
     "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.1.1",
@@ -19,7 +19,7 @@
     "linux-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross.static-aarch64-7.1.1",
     "linux-armv7l" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-raspbian/mpy-cross.static-raspbian-7.1.1"
   },
-  "7.2": {
+  "7.2" : {
     "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross.static-x64-windows-7.2.5.exe",
     "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.2.5",
     "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.2.5",
@@ -29,7 +29,7 @@
     "linux-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross.static-aarch64-7.2.5",
     "linux-armv7l" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-raspbian/mpy-cross.static-raspbian-7.2.5"
   },
-  "7.3": {
+  "7.3" : {
     "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross.static-x64-windows-7.3.2.exe",
     "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.3.2",
     "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.3.2",
@@ -39,7 +39,7 @@
     "linux-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross.static-aarch64-7.3.2",
     "linux-armv7l" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-raspbian/mpy-cross.static-raspbian-7.3.2"
   },
-  "8.0": {
+  "8.0" : {
     "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross.static-x64-windows-7.3.2.exe",
     "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.3.2",
     "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos/mpy-cross-macos-universal-7.3.2",
@@ -49,7 +49,7 @@
     "linux-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross.static-aarch64-7.3.2",
     "linux-armv7l" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-raspbian/mpy-cross.static-raspbian-7.3.2"
   },
-  "8.1": {
+  "8.1" : {
     "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross-windows-8.1.0.static.exe",
     "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos-11/mpy-cross-macos-11-8.1.0-universal",
     "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos-11/mpy-cross-macos-11-8.1.0-universal",
@@ -58,7 +58,16 @@
     "linux-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross-linux-aarch64-8.1.0.static-aarch64",
     "linux-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross-linux-aarch64-8.1.0.static-aarch64"
   },
-  "8.2": {
+  "8.2" : {
+    "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross-windows-8.2.9.static.exe",
+    "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos-11/mpy-cross-macos-11-8.2.9-universal",
+    "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos-11/mpy-cross-macos-11-8.2.9-universal",
+    "macos-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos-11/mpy-cross-macos-11-8.2.9-universal",
+    "linux-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-amd64/mpy-cross-linux-amd64-8.2.9.static",
+    "linux-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross-linux-aarch64-8.2.9.static-aarch64",
+    "linux-aarch64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/linux-aarch64/mpy-cross-linux-aarch64-8.2.9.static-aarch64"
+  },
+  "9.0" : {
     "windows-AMD64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/windows/mpy-cross-windows-8.2.9.static.exe",
     "macos-x86_64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos-11/mpy-cross-macos-11-8.2.9-universal",
     "macos-arm64" : "https://adafruit-circuit-python.s3.amazonaws.com/bin/mpy-cross/macos-11/mpy-cross-macos-11-8.2.9-universal",
