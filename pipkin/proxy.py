@@ -21,6 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+
 import copy
 import email.parser
 import errno
@@ -452,9 +453,9 @@ class MpOrgV2IndexDownloader(BaseIndexDownloader):
         urls_per_wheel_path = {}
 
         for wheel_path, short_hash in version_meta.get("hashes", []):
-            urls_per_wheel_path[
-                wheel_path
-            ] = f"{self._index_url}/file/{short_hash[:2]}/{short_hash}"
+            urls_per_wheel_path[wheel_path] = (
+                f"{self._index_url}/file/{short_hash[:2]}/{short_hash}"
+            )
 
         for wheel_path, url in version_meta.get("urls", []):
             urls_per_wheel_path[wheel_path] = url

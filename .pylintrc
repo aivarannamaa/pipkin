@@ -100,6 +100,7 @@ disable=locally-disabled,
        assignment-from-none, # mypy is more precise about this
        redefined-outer-name, # many false positives, trips on valid uses, mypy would be more precise
        unnecessary-ellipsis, # irrelevant
+       multiple-statements, # may clash with black
 
 
        
