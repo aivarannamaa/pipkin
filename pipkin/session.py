@@ -32,6 +32,7 @@ logger = getLogger(__name__)
 INITIAL_VENV_DISTS = ["pip", "setuptools", "pkg_resources", "wheel"]
 INITIAL_VENV_FILES = ["easy_install.py"]
 META_ENCODING = "utf-8"
+PIP_VERSION = "24.0"
 
 
 @dataclass(frozen=True)
@@ -649,7 +650,12 @@ pip._vendor.distlib.markers.DEFAULT_CONTEXT = \
         except Exception:
             exe = sys.executable
 
-        venv_name = hashlib.md5(str((exe, sys.version_info[0:2])).encode("utf-8")).hexdigest()
+        import pipkin
+
+        venv_path_source = str(
+            (exe, sys.version_info[0:2], pipkin.__version__.split(".", maxsplit=1)[0], PIP_VERSION)
+        )
+        venv_name = hashlib.md5(venv_path_source.encode("utf-8")).hexdigest()
         return os.path.join(self._get_workspaces_dir(), venv_name)
 
     def _get_workspaces_dir(self) -> str:
