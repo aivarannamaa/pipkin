@@ -47,12 +47,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
-from pkg_resources import safe_name, safe_version
-
 from pipkin.util import (
     create_dist_info_version_name,
     custom_normalize_dist_name,
     parse_dist_file_name,
+    safe_name,
+    safe_version,
 )
 
 MP_ORG_INDEX_V1 = "https://micropython.org/pi"
