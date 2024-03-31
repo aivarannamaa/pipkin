@@ -2,6 +2,13 @@
 Version history
 ===============
 
+2.1b1 (2024-03-31)
+==================
+* Use `packaging` instead of `pkg_resources`
+* Start using pip 24.0
+* Create new workspace if pip version on pipkin major version changes
+* Don't install setuptools and wheel into workspace
+
 2.0b2 (2023-05-07)
 ==================
 * Restore support for old micropython.org index
