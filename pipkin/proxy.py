@@ -483,7 +483,8 @@ class MpOrgV2IndexDownloader(BaseIndexDownloader):
         summary = dist_meta.get("description", "").replace("\r\n", "\n").replace("\n", " ")
 
         extra_meta = self._get_micropython_lib_extra_metadata().get(dist_meta["name"], {})
-        home_page = extra_meta.get("project_url", "https://github.com/micropython/micropython-lib")
+        home_page = extra_meta.get("home_page", "https://github.com/micropython/micropython-lib")
+        source_url = extra_meta.get("source_url", "https://github.com/micropython/micropython-lib")
         if not summary.strip():
             summary = extra_meta.get("description", "")
 
@@ -496,6 +497,7 @@ class MpOrgV2IndexDownloader(BaseIndexDownloader):
             Author: {dist_meta.get("author", "")}
             License: {dist_meta.get("license", "")}
             Home-page: {home_page}
+            Project-URL: Source, {source_url}
             """
         ).lstrip()
 

@@ -2,8 +2,6 @@ import json
 import os.path
 import glob
 
-import requests
-
 from bs4 import BeautifulSoup
 from markdown import markdown
 
@@ -33,7 +31,24 @@ fallback_descriptions = {
     "lora-sx127x": "MicroPython LoRa SX127x driver",
     "lora-sync": "MicroPython LoRa synchronous modem driver",
     "pyjwt" : "MicroPython compatible implementation of RFC 7519 (JSON Web Token)"
+}
 
+homepage_overrides = {
+    "usb-device": "https://github.com/micropython/micropython-lib/tree/master/micropython/usb",
+    "usb-device-cdc": "https://github.com/micropython/micropython-lib/tree/master/micropython/usb",
+    "usb-device-hid": "https://github.com/micropython/micropython-lib/tree/master/micropython/usb",
+    "usb-device-keyboard": "https://github.com/micropython/micropython-lib/tree/master/micropython/usb",
+    "usb-device-midi": "https://github.com/micropython/micropython-lib/tree/master/micropython/usb",
+    "usb-device-mouse": "https://github.com/micropython/micropython-lib/tree/master/micropython/usb",
+
+    "aioble": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
+    "aioble-central": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
+    "aioble-client": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
+    "aioble-core": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
+    "aioble-l2cap": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
+    "aioble-peripheral": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
+    "aioble-security": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
+    "aioble-server": "https://github.com/micropython/micropython-lib/tree/master/micropython/bluetooth/aioble",
 }
 
 data = {}
@@ -47,12 +62,14 @@ for lib_dir in lib_dirs:
         print("Processing", dist_name)
 
         description = ""
-        readme_url = f"https://raw.githubusercontent.com/micropython/micropython-lib/master/{dirname}/README.md"
-        response = requests.get(readme_url, headers={'Accept-Encoding': 'gzip'})
+        readme_path = os.path.join(dirname, "README.md")
 
-        if response.status_code != 404:
+        if os.path.exists(readme_path):
+            with open(readme_path, "r", encoding="utf-8") as fp:
+                readme_text = fp.read()
+
             in_first_para = False
-            for line in response.text.splitlines():
+            for line in readme_text.splitlines():
                 line = line.strip()
                 if not in_first_para:
                     if not line or line == dist_name or line.startswith("=") or line.startswith("#"):
@@ -67,7 +84,15 @@ for lib_dir in lib_dirs:
                 else:
                     break
 
-        data[dist_name] = {"project_url": URL_PREFIX + "/" + dirname}
+        # try to find the closest README.md to be treated as home_page
+        closest_readme_dir = os.path.dirname(readme_path)
+        while not os.path.exists(os.path.join(closest_readme_dir, "README.md")) and os.path.dirname(closest_readme_dir):
+            closest_readme_dir = os.path.dirname(closest_readme_dir)
+
+        data[dist_name] = {
+            "source_url": URL_PREFIX + "/" + dirname,
+            "home_page" : homepage_overrides.get(dist_name, URL_PREFIX + "/" + closest_readme_dir)
+        }
 
         if description:
             print("Found desc:", description)
