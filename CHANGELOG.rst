@@ -2,6 +2,10 @@
 Version history
 ===============
 
+2.2b1 (2026-03-27)
+==================
+* Changed my mind, remove `packaging` dependency for now
+
 2.1b1 (2024-03-31)
 ==================
 * Use `packaging` instead of `pkg_resources`

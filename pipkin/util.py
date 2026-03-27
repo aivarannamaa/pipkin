@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import Any, List, Optional, Set, Tuple
 
-import packaging.version
-
 logger = getLogger(__name__)
 
 
@@ -223,14 +221,9 @@ def safe_name(name: str) -> str:
 def safe_version(version):
     """
     Convert an arbitrary string to a standard version string
-    Copied from pkg_resources
+    Adapted from pkg_resources
     """
-    try:
-        # normalize the version
-        return str(packaging.version.Version(version))
-    except packaging.version.InvalidVersion:
-        version = version.replace(" ", ".")
-        return re.sub("[^A-Za-z0-9.]+", "-", version)
+    return re.sub("[^A-Za-z0-9.]+", "-", version)
 
 
 def download_and_parse_json(url: str, timeout: int = 10) -> Any:

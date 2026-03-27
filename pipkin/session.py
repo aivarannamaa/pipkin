@@ -32,7 +32,7 @@ logger = getLogger(__name__)
 MANAGEMENT_DISTS = ["pip", "setuptools", "pkg_resources", "wheel"]
 MANAGEMENT_FILES = ["easy_install.py"]
 META_ENCODING = "utf-8"
-PIP_VERSION = "24.0"
+PIP_VERSION = "24.3.1"
 
 
 @dataclass(frozen=True)
